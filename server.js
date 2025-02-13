@@ -53,12 +53,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
     const nodeName = process.argv[3]
     const host = 'localhost'
     let port = Number(process.argv[4]) || 3000
-    let peers = []
-    if( process.argv[5] ) peers = process.argv[5].includes(',') ? process.argv[5].split(',') : [ process.argv[5] ]
+    let nodes = []
+    if( process.argv[5] ) nodes = process.argv[5].includes(',') ? process.argv[5].split(',') : [ process.argv[5] ]
 
     async function main() {
         // start miner memory process
-        const miner = new Miner({ nodeName, host, port, peers, dataPath });
+        const miner = new Miner({ nodeName, host, port, nodes, dataPath });
         miner.blockchain.compress = flags !== 'debug'
 
         // now run webserver to engage with network
@@ -125,12 +125,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         // curl --data '{"src":"test","dest":"tome","amount":"33"}' http://localhost:5000/transaction
 
         .post('/node/announce', handleJSON(async (info) => {
-            console.log( `/node/announce miner(${info.nodeName}) type(${info.type}) peers(${info.peers.join(',')})`, info )
+            console.log( `>> /node/announce miner(${info.nodeName}) hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',')})` )
             // respond to their blockchain info
 
-            const newPeers = info.peers.filter( peer => !peer.includes(miner.host+':'+miner.port) )
-            console.log( ` has new peers:`, newPeers )
-
+            info.peers.push( info.hostname ) // include the contactee
+            miner.addPeers( info.peers )
+            // console.log( ` ... peers: `, miner.peers )
             // their latest block - it comes as blockchain: [{ index: 12, hash: 000000 }]
             // we'll get our hash for that block and send back, as well as our latest block
             const queryBlock = info.blockchain.pop()
@@ -141,15 +141,23 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             return { error: false, ...miner.minerAnnounceInfo(queryBlock.index) }
             }))
 
-        .post('/blocks/announce', handleJSON(async (block) => {
-            let blocks = []
-            const newBlock = miner.blockchain.addBlock({ block })
-            if( !newBlock.error )
-                blocks.push( newBlock )
+        .post('/blocks/announce', handleJSON(async (blocks) => {
+            console.log( `>> /blocks/announce: `, blocks )
+            let result = []
+            blocks.forEach( block => {
+                if( block.index && !block.error ){
+                    const newBlock = miner.blockchain.addBlock({ block })
+                    if( !newBlock.error ) {
+                        blocks.push( newBlock )
+                        // remove those transactions from any blocks we are mining!
+                        miner.pruneTransactions(newBlock)
+                    }
+                }
+            })
 
             // any pending transactions now published in block can be pruned
-            miner.pruneTransactions(newBlock)
-            return { blocks }
+            // miner.pruneTransactions(newBlock)
+            return { result }
             }))
 
         .post('/transactions/announce', handleJSON(async (transactions) => {
