@@ -1,0 +1,21 @@
+{
+  "name": "blockchainbasic",
+  "version": "1.0.0",
+  "description": "Basic blockchain example",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "Filipe Laborde, fil@rezox.com",
+  "license": "MIT",
+  "dependencies": {
+    "bs58": "^6.0.0",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.4.7",
+    "tweetnacl": "^1.0.3",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0",
+    "ws": "^8.18.0"
+  }
+}
