@@ -29,7 +29,9 @@ node server.js debug miner1 5000
 ```
 
 ## RUNNING A NODE
+```bash
 node server.js debug miner1 5000
+```
 (will listen on localhost:5000)
 
 
