@@ -22,12 +22,6 @@ No database is used; all data is stored as text/zip files in a directory.
 
 ---
 
-## Running a Node
-To run a node, use the following command:
-```bash
-node server.js debug miner1 5000
-```
-
 ## RUNNING A NODE
 ```bash
 node server.js debug miner1 5000

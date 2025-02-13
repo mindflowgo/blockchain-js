@@ -3,13 +3,17 @@ import { urlCall, sha256Hash, fixRounding, time } from './lib/helper.js'
 
 // Terminal functionality - this only runs when the file is run directly from terminal (so it's dual-use)
 
-if( process.argv.length<3 ){
+function ledgerInfo(){
     console.log( `LEDGER options:`)
     console.log( `- node ledger.js list` )
     console.log( `- node ledger.js check {walletname}`)
     console.log( `- node ledger.js create {walletname} [miner-server]` )
     console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer [miner-server]` )
     console.log( `- node ledger.js transaction-verify {hash1}[,hash2,...] {miner-server}`)
+}
+
+if( process.argv.length<3 ){
+    ledgerInfo()
     process.exit()
 }
 
@@ -30,9 +34,8 @@ async function main(){
     
     switch( method ){
         case 'list':
-        default:
-            console.log( `Existing wallets:` )
-            console.log( ledger.list() )
+            console.log( `Existing wallets & balances:` )
+            console.log( ledger.walletBalances() )
             break
 
         case 'check':
@@ -127,6 +130,11 @@ async function main(){
                 const result = ledger.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
                 console.log( ` ... merkle proof PASSED for server with transaction (hash=${verify.hash}): in block (#${verify.block.index}) created on (${verify.block.timestamp})` )
             })
+            break
+
+        default:
+            ledgerInfo()
+            break
     }
 }
 main()
