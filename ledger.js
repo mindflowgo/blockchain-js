@@ -89,16 +89,17 @@ async function main(){
             }
 
             // let's get the fee for transaction & seq
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src: name, amount }] })
+            const src = ledger.buildTransactionName(name)
+            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
             if( response.error || !response.result ){
                 console.log( `  x invalid transaction fee request, aborting:`, response )
                 return
             }
-            const { fee, seq, publicKey: namePublicKey }= response.result[0]
-            console.log( ` * User publicKey(${namePublicKey}) known on server, last seq(${seq}).`)
-            // const seq = response.result[0].seq
+
+            const { fee, seq }= response.result[0]
+
             // now we accept this fee and authorize/sign the transaction
-            const signedTransaction = ledger.transactionSign({src: name, dest, amount, fee, type, seq: seq+1})
+            const signedTransaction = ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1})
             if( signedTransaction.error ){
                 console.log( `  x unable to create signed transaction`)
                 return
@@ -115,7 +116,7 @@ async function main(){
             if( result.error )
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted signed transaction; and will notify other servers. Transaction Hash: ${result.hash}` )
+                console.log( ` * mining server accepted. Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
             break
 
         case 'transaction-verify': // merkle tree proof returned, thus proving the node has the transaction

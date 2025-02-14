@@ -71,7 +71,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             const fromIndex = Number(params.fromIndex) + 1
             // console.log( `>> /blocks?fromIndex=${fromIndex}\n<< [${miner.nodeName}] blockchain`)
             // send 100 blocks at a time...
-            res.end( JSON.stringify({ error: false, result: miner.blockchain.getBlockchain(fromIndex,2) }) )
+            res.end( JSON.stringify({ error: false, result: miner.blockchain.getBlockchain(fromIndex, 100) }) )
             // const res = await httpsPost({ path: `/api/`, body: JSON.stringify({}) })
             })
 
@@ -142,15 +142,26 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }))
 
         .post('/blocks/announce', handleJSON(async (blocks) => {
-            console.log( `>> /blocks/announce: `, blocks )
+            // console.log( `>> /blocks/announce: `, blocks )
             let result = []
             blocks.forEach( block => {
                 if( block.index && !block.error ){
-                    const newBlock = miner.blockchain.addBlock({ block })
+                    // console.log( `>> /blocks/announce block:`, block)
+                    const newBlock = miner.blockchain.addBlock(block)
+                    // console.log( `  newBlock: `, newBlock.block )
                     if( !newBlock.error ) {
-                        blocks.push( newBlock )
+                        // blocks.push( newBlock )
+                        // run the ransactions from it
+                        newBlock.block.transactions.forEach( t => {
+                            const { isNew, index } = miner.blockchain.findOrCreateHash( t.hash, newBlock.index )
+                            console.log( `  ..findOrCreateHash[${t.hash}]: isNew(${isNew}) index(${index})`)
+                            if( isNew ) // process it
+                                miner.ledger.transaction(t)
+                            else 
+                                console.log( ` x skipping block transaction, already in system (${index})` )
+                        })
                         // remove those transactions from any blocks we are mining!
-                        miner.pruneTransactions(newBlock)
+                        // miner.pruneTransactions(newBlock)
                     }
                 }
             })
@@ -176,8 +187,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
                 // console.log( `newTransaction: `, newTransaction)
                 const { src, dest, amount }= transactionData
-                const { error, fee, seq, hash }= newTransaction
-                result.push({ error, hash, dest, amount, fee, seq })
+                const { error, fee, seq, hash, balance }= newTransaction
+                result.push({ error, hash, fee, seq, balance })
                 if( error ){
                     console.log( `Sorry transaction declined: ${error}`)
                 } else {
@@ -195,15 +206,15 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             queries.forEach( ({ src, amount })=> {
                 // now try to complete transaction
                 const fee = miner.transactionFee({ amount })
-                const publicKey = miner.ledger.getPublicKey( src )
-                if( publicKey.error ){
-                    result.push( publicKey )
+                const srcWallet = miner.ledger.getWallet( src )
+                if( srcWallet.error ){
+                    result.push( srcWallet )
                 } else {
-                    const seq = miner.ledger.getTransactionSeq( publicKey )
+                    const seq = srcWallet.seq
                     if( seq.error )
                         result.push( seq )
                     else
-                        result.push( { fee, seq, publicKey })
+                        result.push( { fee, seq, publicKey: srcWallet.publicKey })
                 }
             })
             return { result }
