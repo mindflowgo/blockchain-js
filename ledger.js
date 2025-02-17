@@ -90,7 +90,7 @@ async function main(){
 
             // let's get the fee for transaction & seq
             const src = ledger.buildTransactionName(name)
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
+            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }], header: { name: "TED" } })
             if( response.error || !response.result ){
                 console.log( `  x invalid transaction fee request, aborting:`, response )
                 return
@@ -128,8 +128,12 @@ async function main(){
                 return
             }
             response.result.forEach( verify => {
-                const result = ledger.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
-                console.log( ` ... merkle proof PASSED for server with transaction (hash=${verify.hash}): in block (#${verify.block.index}) created on (${verify.block.timestamp})` )
+                if( verify.error ){
+                    console.log( `${verify.hash}: No available block; it's invalid.`)
+                } else {
+                    const result = ledger.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
+                    console.log( `${verify.hash}: VALID -- merkle proof PASSED for server, found in block (#${verify.block.index}) created on (${verify.block.timestamp})` )
+                }
             })
             break
 

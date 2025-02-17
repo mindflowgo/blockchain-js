@@ -1,6 +1,10 @@
 /**************************************************************************
  * Simple Fully Functional Blockchain Example
  * 
+ * (c) 2025 Filipe Laborde, fil@rezox.com
+ * 
+ * MIT License
+ * 
  * To illustrate how blockchain works with a simple but relatively fully
  * featured example works. A learning took to help you understand the 
  * complexity.
@@ -15,7 +19,7 @@
 import dotenv from 'dotenv'
 import uWS from 'uWebSockets.js' // npm install uNetworking/uWebSockets.js#v20.51.0
 // import WebSocket from 'ws';
-import { urlCall, fixRounding, time, sha256Hash, handleJSON } from './lib/helper.js'
+import { urlCall, fixRounding, time, sha256Hash, waitReady, handleGET, handlePOST } from './lib/helper.js'
 import Miner from './lib/Miner.js'
 
 // let COMPRESS_BLOCKFILES = false
@@ -63,145 +67,186 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         // now run webserver to engage with network
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
-        .get('/blocks', (res, req) => {
-            const params = Object.fromEntries(new URLSearchParams(req.getQuery()))
-
+        .get('/blocks/hashes', handleGET((res, req) => {
             // const remoteIP = res.getRemoteAddressAsText() // res.getProxiedRemoteAddressAsText()).toString()
-            // const fromIndex = req.getParameters('fromIndex')
+            console.log(`<< [${req.nodeToken}]${req.getUrl()}`)
+            const params = Object.fromEntries(new URLSearchParams(req.getQuery()))
             const fromIndex = Number(params.fromIndex) + 1
-            // console.log( `>> /blocks?fromIndex=${fromIndex}\n<< [${miner.nodeName}] blockchain`)
-            // send 100 blocks at a time...
-            res.end( JSON.stringify({ error: false, result: miner.blockchain.getBlockchain(fromIndex, 100) }) )
-            // const res = await httpsPost({ path: `/api/`, body: JSON.stringify({}) })
-            })
+            result = miner.blockchain.getBlockchainHashes(fromIndex, 100)
+            res.end( JSON.stringify({ error: false, result }) )
+            }, miner.nodeState))
 
-        .get('/node/status', (res, req) => {
+        .get('/blocks', handleGET((res, req) => {
             // const remoteIP = res.getRemoteAddressAsText() // res.getProxiedRemoteAddressAsText()).toString()
+            console.log(`<< [${req.nodeToken}]${req.getUrl()}`)
             const params = Object.fromEntries(new URLSearchParams(req.getQuery()))
-            const blockchainHeight = params.bH // const blockchainHeight = req.getParameter('len')
-            // console.log( `<< [/node/status] params blockchainHeight(${blockchainHeight})` )
+            const fromIndex = Number(params.fromIndex) + 1
+            result = miner.blockchain.getBlockchain(fromIndex, 100)
+            res.end( JSON.stringify({ error: false, result }) )
+            }, miner.nodeState))
+
+        .get('/node/status', handleGET((res, req) => {
+            const params = Object.fromEntries(new URLSearchParams(req.getQuery()))
+            const blockchainHeight = params.bH
+            console.log(`<< [${req.nodeToken}]${req.getUrl()}?${req.getQuery()}`)
 
             const response = {
                 timestamp: time(),
+                pendingTransactions: [],
                 blockchainHeight: miner.blockchain.height(),
                 blockchain: []
             }
 
-            // check we include their blockchainHeight item, include it
-            // they can verify chains match to that point, and request future blocks
+            // if requestee less height, give the hash for THEIR last block (for them to verify against)
             if( blockchainHeight <= miner.blockchain.height() ){
-                const block = miner.blockchain.chain[blockchainHeight]
-                response.blockchain.push({ index: block.index, hash: block.hash })
+                const { index, hash } = miner.blockchain.getBlock(blockchainHeight)
+                response.blockchain.push({ index, hash })
             }
 
-            // console.log( `[${miner.nodeName}] << /node/heartbeat | responded.`)
             res.end( JSON.stringify({ error: false, ...response }) )
-            // const res = await httpsPost({ path: `/api/`, body: JSON.stringify({}) })
-            })
+            }, miner.nodeState))
         
-        .get('/transactions/verify', (res, req) => {
+        .get('/transactions/verify', handleGET((res, req) => {
             const params = Object.fromEntries(new URLSearchParams(req.getQuery()))
-            
+            console.log(`<< [${req.nodeToken}]${req.getUrl()}?${req.getQuery()}`)
+
             let result = []
             if( params.hash ){
                 const hashes = params.hash.split(',')
                 hashes.forEach( hash => {
-                    // scan blocks for hash
-                    for( let i=0; i<=miner.blockchain.height(); i++ ){
-                        const block = miner.blockchain.chain[i]
-                        const matchTransaction = block.transactions.filter( tx => tx.hash === hash )
-                        if( matchTransaction.length === 1 ){
-                            // found; generate merkleProof and gather for client
-                            const { proof, merkleRoot } = miner.blockchain.merkleProof(block.transactions, hash)
-                            result.push( { hash, block: { index: block.index, timestamp: block.timestamp }, merkleRoot, proof } )    
-                            break
-                        }
+                    // find in the transaction hash for speed (vs scanning blocks)
+                    const hashInfo = miner.blockchain.transactionHashes[hash]
+                    if( hashInfo?.index && hashInfo.index > 0 ){
+                        const block = miner.blockchain.getBlock(hashInfo.index)
+                        const { proof, merkleRoot } = miner.blockchain.merkleProof(block.transactions, hash)
+                        result.push({ hash, block: { index: block.index, timestamp: block.timestamp }, merkleRoot, proof })
+
+                    } else {
+                        result.push({ error: `Invalid hash ${hash}`, hash, block: false })                        
                     }
                 })
             }
             res.end( JSON.stringify({ error: false, result }) )
-            // const res = await httpsPost({ path: `/api/`, body: JSON.stringify({}) })
-            })
-        // curl --data '{"src":"test","dest":"tome","amount":"33"}' http://localhost:5000/transaction
+            }, miner.nodeState))
 
-        .post('/node/announce', handleJSON(async (info) => {
-            console.log( `>> /node/announce miner(${info.nodeName}) hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',')})` )
-            // respond to their blockchain info
+        .post('/node/announce', handlePOST(async (info,req) => {
+            console.log( `>> [${req.nodeToken}]${req.getUrl()} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',')})` )
 
-            info.peers.push( info.hostname ) // include the contactee
+            // include the post contactee, and add to our peer list
+            info.peers.push( info.hostname ) 
             miner.addPeers( info.peers )
-            // console.log( ` ... peers: `, miner.peers )
-            // their latest block - it comes as blockchain: [{ index: 12, hash: 000000 }]
-            // we'll get our hash for that block and send back, as well as our latest block
-            const queryBlock = info.blockchain.pop()
-            // console.log( `queryBlock(${queryBlock.index}) info.blockchain:`, info.blockchain )
-            // const idx = this.peers.findIndex( item => item.nodeName ===params.nodeName )
-            // this.peers[idx] = peers.map( peer =>{ return { hostname: peer, heartbeat: 0, nodeName: '', blockchainHeight: 0 } })
-            // blockchain: { index: this.blockchain.getLatestBlock().index, hash: this.blockchain.getLatestBlock().hash }
-            return { error: false, ...miner.minerAnnounceInfo(queryBlock.index) }
-            }))
 
-        .post('/blocks/announce', handleJSON(async (blocks) => {
-            // console.log( `>> /blocks/announce: `, blocks )
+            // they sent index/hash of their latest block, we'll verify if that matches ours
+            const queryBlock = info.blockchain.pop()
+            return { error: false, ...miner.minerAnnounceInfo(queryBlock.index) }
+            }, miner.nodeState))
+
+        .post('/blocks/announce', handlePOST(async (blocks,req) => {
+            console.log( `>> [${req.nodeToken}]${req.getUrl()} #${blocks.map(b=>b.index).join(',')}` )
             let result = []
-            blocks.forEach( block => {
+            blocks.forEach( async block => {
                 if( block.index && !block.error ){
-                    // console.log( `>> /blocks/announce block:`, block)
+                    // lets try adding this incoming block to our chain
                     const newBlock = miner.blockchain.addBlock(block)
                     // console.log( `  newBlock: `, newBlock.block )
                     if( !newBlock.error ) {
+                        // if we are mining same block, cancel our block!!
+                        if( miner.workerStatus === 'MINING' && miner.workerBlock.index === block.index ){
+                            console.log( `**CRAP** Incoming mined-block SAME index as ours, aborting our mining effort; reversing transactions.` )
+                            miner.worker.postMessage({action: 'ABORT' })
+                        }
+
+                        // wait for worker to reverse the block, transactions, etc.
+                        await waitReady(miner, 'workerStatus', 'READY')
+                        // while( miner.workerStatus !== 'READY' ){}
+
                         // blocks.push( newBlock )
                         // run the ransactions from it
                         newBlock.block.transactions.forEach( t => {
-                            const { isNew, index } = miner.blockchain.findOrCreateHash( t.hash, newBlock.index )
-                            console.log( `  ..findOrCreateHash[${t.hash}]: isNew(${isNew}) index(${index})`)
-                            if( isNew ) // process it
-                                miner.ledger.transaction(t)
-                            else 
-                                console.log( ` x skipping block transaction, already in system (${index})` )
+                            const { isNew, index } = miner.blockchain.findOrCreateHash( t.hash, newBlock.block.index )
+                            if( isNew ){ // process it
+                                result.push( miner.ledger.transaction(t) )
+                            } else {
+                                // transaction is not unknown to us
+                                // make sure we aren't mining it, if so, kill that
+
+                            //     console.log( `  x skipping block transaction (${t.src}/${t.seq}) -> (${t.dest}), already accounted for; now block #(${index})` )
+                            }
                         })
+                        // console.log( 'this.transactionHashes[hash]', miner.blockchain.transactionHashes )
                         // remove those transactions from any blocks we are mining!
                         // miner.pruneTransactions(newBlock)
                     }
+                    miner.ledger.walletBalances()
                 }
             })
 
             // any pending transactions now published in block can be pruned
             // miner.pruneTransactions(newBlock)
             return { result }
-            }))
+            }, miner.nodeState))
 
-        .post('/transactions/announce', handleJSON(async (transactions) => {
+        .post('/transactions/announce', handlePOST(async (transactions,req) => {
             let result = []
-            transactions.forEach( transactionData => {
-                console.log( ` got an announcement for `, transactionData )
-            })
-            return { result }
-            }))
+            transactions.forEach( t => {
+                // console.log( ` got an announcement for `, t )
+                // delete administrative fields (use these for decision making)
+                const { isNew, index } = miner.blockchain.findOrCreateHash( t.hash )
+                // console.log( `  ..findOrCreateHash[${t.hash}]: isNew(${isNew}) index(${index})`)
+                if( isNew ){ 
+                    // push into our transaction queue
+                    miner.pendingTransactions.push( t )
+                    // extract miner-meta-data, then calculate change to users balances
+                    const { txStake, balance, ...transaction }= t
+                    const transResult = miner.ledger.transaction(transaction) 
+                    result.push( transResult )
+                    const publicKey = miner.ledger.getPublicKey(transaction.src)
+                    console.log( `>> [${req.nodeToken}]${req.getUrl()} txStake(${transResult.txStake}) amount(${miner.ledger.wallets[publicKey].amount})` ) // publicKey(${publicKey}), expected balance(${balance}) transaction: `, transResult )
+                    if( !transResult.error && miner.ledger.wallets[publicKey].balance !== balance )
+                        console.log( `ERROR! We successfully did transaction but it's balance (${miner.ledger.wallets[publicKey].balance}) is NOT what announcement said (${balance}) `)
+                
+                    // announce to anyone but the source
+                } else 
+                    console.log( ` x skipping transaction, already in system (${index})` )
+                })
+                return { result }
+            }, miner.nodeState))
 
-        .post('/transactions', handleJSON(async (transactions) => {
+        .post('/transactions', handlePOST(async (transactions,req) => {
             let result = []
-            transactions.forEach( transactionData => {
+            for( const transactionData of transactions ){
+                const { src, dest, seq, amount, hash, txStake }= transactionData
+
                 // now try to complete transaction
-                const newTransaction = miner.transaction(transactionData)
-
-                // console.log( `newTransaction: `, newTransaction)
-                const { src, dest, amount }= transactionData
-                const { error, fee, seq, hash, balance }= newTransaction
-                result.push({ error, hash, fee, seq, balance })
-                if( error ){
-                    console.log( `Sorry transaction declined: ${error}`)
-                } else {
-                    miner.broadcastPeers('/transactions/announce',[newTransaction])
-                    console.log( ` .. broadcasting to others: `, newTransaction )
+                console.log(`>> [${req.nodeToken}]${req.getUrl()} (${src.split(':')[0]}/${seq}) amount(${amount}) txStake(${txStake})`)
+                if( !hash ){
+                    console.log( `   x rejecting transaction, no hash`)
+                    result.push({ error: `Invalid transaction, no hash (${src}) for $(${amount})` })
+                    continue
                 }
-            })
+                if( miner.blockchain.transactionHashes[hash] ){
+                    console.log( `   x rejecting transaction: already in our system: ${hash}`)
+                    result.push({ error: `Already in our transactions ${hash}`, hash })
+                    continue
+                }
+                const newTransaction = miner.transaction(transactionData)
+                const { error, fee, seq: postSeq, hash: postHash, balance }= newTransaction
+                result.push({ error, hash: postHash, fee, seq: postSeq, balance })
+                if( error ){
+                    console.log( `   x Rejected: ${error}`)
+                    result.push({ error, hash })
+                    continue
+                }
+
+                console.log( `    ACCEPTED ${postHash}; now broadcasting onward` )
+                miner.broadcastPeers({ path: '/transactions/announce', data: [newTransaction], all: true })
+            }
             // console.log( `[transaction] result:`, result )
             return { result }
-            }))
+            }, miner.nodeState))
 
         // get fee and seq #
-        .post('/transactions/prepare', handleJSON(async (queries) => {
+        .post('/transactions/prepare', handlePOST(async (queries,req) => {
             let result = []
             queries.forEach( ({ src, amount })=> {
                 // now try to complete transaction
@@ -218,18 +263,18 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 }
             })
             return { result }
-            }))
+            }, miner.nodeState))
                         
-        .post('/node/wallet_sync', handleJSON(async (wallets) => {
+        .post('/node/wallets', handlePOST(async (wallets,req) => {
             let result = []
             wallets.forEach( walletData => {
                 const name = walletData.name
                 const updateWallet = miner.ledger.updateWallet(name, walletData)
                 result.push({ name, error: updateWallet.error })
             })
-            console.log( `[wallet_sync] result:`, result )
+            console.log( `>>${req.nodeToken}${req.getUrl()} result:`, result )
             return { result }
-            }))
+            }, miner.nodeState))
 
         .any('/*', (res, req) => {
             /* Wildcards - make sure to catch them last */
@@ -239,12 +284,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .listen(host, port, (token) => {
             if (token) {
                 // port = uWS.us_socket_local_port(token)
-                console.log(`Miner running on ${host}:${port}`)
+                console.log(`Miner running on ${host}:${port} ${miner.nodeState}`)
             } else {
                 console.log('Failed finding available port')
                 process.exit(-1)
             }
-        });
+        })
     }
 
     main().catch(err => {
