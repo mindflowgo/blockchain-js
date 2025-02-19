@@ -1,4 +1,4 @@
-# Blockchain Basics
+# Blockchain JS
 
 ## Motivation
 One of the best ways to truly understand something is to build it yourself. The goal of this project is to build a full-featured, although not production-ready, blockchain solution. It incorporates the key security features of modern-day blockchains and is inspired by the core ideas of Bitcoin.
@@ -14,6 +14,11 @@ The blockchain includes the following core features:
 - **Transaction nonce/sequence** (similar to Ethereum/XRP, a slight improvement over Bitcoin)
 
 No database is used; all data is stored as text/zip files in a directory.
+
+When transactions occur, if they are new to a node, and signed properly, the node will announce it to all it's peers. It will then take the bank of the pendingTransactionss, ordered by (using SQL to model) - priority types (deposit, mint issue), then signed transactions, then the functional fees, block rewards -- each of these groups ordered by timestamp, user/seq:
+```sql
+ORDER BY type='minerDeposit' || type='mintIssue' DESC, txSig <> '' DESC, timestamp ASC, src ASC, seq ASC  LIMIT 10
+```
 
 ### Technologies Used
 - **JavaScript ES6** via Node.js
@@ -71,6 +76,11 @@ Merkle proofs allow a user to know with certainty that a node server has a trans
 node ledger.js transaction-verify 831isZBdqs8qnSziZuVjimnoWFmMxX8HW7uszFfoUd24,6Knq7UoWrKxGcvoVmRy15E8iXCmCmTjDrmZTLb8dG8bX http://localhost:5000
 ```
 
+### Checking Balances
+You can check the balances on accounts with a server:
+```bash
+node ledger.js wallets fil,miner0:93Wag45TTBijDVg696N5VqjtbmMagGKbZc7W5kLoty8xZ http://localhost:5000
+```
 
 ### UI
 If you're interested in helping build out this project or the UI for it, get in touch. 

@@ -5,11 +5,11 @@ import { urlCall, sha256Hash, fixRounding, time } from './lib/helper.js'
 
 function ledgerInfo(){
     console.log( `LEDGER options:`)
-    console.log( `- node ledger.js list` )
+    console.log( `- node ledger.js wallets {wallet1}[,wallet2,...] [miner-server-api-url]` )
     console.log( `- node ledger.js check {walletname}`)
     console.log( `- node ledger.js create {walletname} [miner-server-api-url]` )
-    console.log( `- node ledger.js miner-deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
-    console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer [miner-server-api-url]` )
+    console.log( `- node ledger.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
+    console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url}` )
     console.log( `- node ledger.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
 }
 
@@ -31,12 +31,41 @@ async function main(){
     const param3 = process.argv[5] || ''
     const param4 = process.argv[6] || ''
     const param5 = process.argv[7] || ''
-    if( method !== 'list' && !name ) console.log( `Please re-run with a walletname, ex. node ledger.js create joesmith`)
+    if( method !== 'wallets' && !name ) console.log( `Please re-run with a walletname, ex. node ledger.js create joesmith`)
     
     switch( method ){
-        case 'list': {
-            console.log( `Existing wallets & balances:` )
-            console.log( ledger.walletBalances() )
+        case 'wallets': {
+            let walletNames = param1.split(',').map( n=>ledger.buildTransactionName(n) ).join(',') // may be multiple hashes comma separated
+            const url = param2
+            let wallets = []
+            if( walletNames.length<1 ){
+                console.log( `Please include some wallets to get information for! Ex. node ledger.js wallets fil:publickey,fred:publickey http://localhost:5000`)
+                return
+            }
+
+            console.log( `\nExisting wallets & balances on (${url || 'me'}):` )
+            // console.log( ledger.walletBalances() )
+
+            if( url ){
+                const response = await urlCall({ hostname: url, path: `/node/wallets?wallets=${walletNames}` })
+                // console.log( `response: `, response )
+                if( response.error ){
+                    console.log( response.error )
+                    return
+                }
+                wallets = response.result
+            } else {
+                wallets = ledger.walletBalances()
+            }
+
+            // arrange alphabettically and display
+            wallets.sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
+                const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
+                if( !(name.length===0 && i.name === '_') ){
+                    const seqInfo = i.seq === 0 ? ':    ' : '/' + i.seq + ':' + ' '.repeat(3 - i.seq.toString().length)
+                    console.log( `   - ${name}${seqInfo}${' '.repeat(20-name.length)} $ ${i.balance || '0'} ${' '.repeat(20-i.balance.toString().length)}`)
+                }})
+            
             break
             }
         case 'check': {

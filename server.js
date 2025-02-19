@@ -68,14 +68,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         // now run webserver to engage with network
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
         .get('/blocks/hashes', handleGET((res, req) => {
-            console.log(`<< [${req.nodeToken}]${req.url}`)
+            console.log(`>> [${req.nodeToken}]${req.url}`)
             const fromIndex = Number(req.query.fromIndex) + 1
             const result = miner.blockchain.getBlockchainHashes(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
 
         .get('/blocks', handleGET((res, req) => {
-            console.log(`<< [${req.nodeToken}]${req.url}`)
+            console.log(`>> [${req.nodeToken}]${req.url}`)
             const fromIndex = Number(req.query.fromIndex) + 1
             const result = miner.blockchain.getBlockchain(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
@@ -83,27 +83,35 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         .get('/node/status', handleGET((res, req) => {
             const blockchainHeight = req.query.bH
-            console.log(`<< [${req.nodeToken}]${req.url}?${req.getQuery()}`)
+            console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
 
             const response = {
                 nodeName: miner.nodeName,
+                nodeState: miner.nodeState,
                 timestamp: time(),
-                pendingTransactions: [],
+                pendingTransactionsCnt: miner.pendingTransactions.length,
                 blockchainHeight: miner.blockchain.height(),
-                blockchain: []
+                blockAtHeight: {}
             }
 
             // if requestee less height, give the hash for THEIR last block (for them to verify against)
             if( blockchainHeight <= miner.blockchain.height() ){
                 const { index, hash } = miner.blockchain.getBlock(blockchainHeight)
-                response.blockchain.push({ index, hash })
+                response.blockAtHeight = { index, hash }
             }
 
             res.end( JSON.stringify({ error: false, ...response }) )
             }, miner.nodeState))
         
+        .get('/node/wallets', handleGET((res, req) => {
+                console.log(`>> [${req.nodeToken}]${req.url}:`)
+                const wallets = req.query.wallets === 'ALL' ? [] : req.query.wallets.split(',')
+                const result = miner.ledger.walletBalances(wallets)
+                res.end( JSON.stringify({ error: false, result }) )
+                }, miner.nodeState))
+
         .get('/transactions/verify', handleGET((res, req) => {
-            console.log(`<< [${req.nodeToken}]${req.url}?${req.getQuery()}`)
+            console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
 
             let result = []
             if( req.query.hash ){
@@ -131,13 +139,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             info.peers.push( info.hostname ) 
             miner.addPeers( info.peers )
 
-            // they sent index/hash of their latest block, we'll verify if that matches ours
-            const queryBlock = info.blockchain.pop()
-            return { error: false, ...miner.minerAnnounceInfo(queryBlock.index) }
+            // they sent index/hash of their latest block, we'll send our hash for that block
+            return { error: false, ...miner.pingInfo(info.blockAtHeight.index) }
             }, miner.nodeState))
 
         .post('/blocks/announce', handlePOST(async (blocks,head) => {
-            console.log( `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}`, blocks )
+            console.log( `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
 
             miner.nodeState = 'LOADING'
             const addResult = miner.blockchain.addBlockchain(blocks)
