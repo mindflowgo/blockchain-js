@@ -41,15 +41,12 @@ curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]'
 curl --data '[{"src":"_mint","dest":"miner1","amount":"202","type":"mintAirDrop"}]' http://localhost:5000/transactions
 ```
 
-### User Deposit @ Miner
+### User Deposit in Miner; then Withdraw to User
 // generate the user locally first, as we need a public/private key
+// note the api-url and the miner nodeName must be same (because other nodes don't know publicKey for 'miner0', except their own server)
 ```bash
 node ledger.js create fil
-```
-
-Now use the name + publicKey to perform transaction on miner to deposit into users account
-```bash
-curl --data '[{"src":"miner1","dest":"fil:HTzFU2orJH5tmyd3UMsUyLYVn3igRjEGqoRjjarKWembA","amount":"200","type":"minerDeposit","seq":1}]' http://localhost:5000/transactions
+node ledger.js miner-deposit miner0 fil 500 http://localhost:5000/
 ```
 
 Now you have a user with money on their blockchain. You can have them send to other users:
