@@ -82,5 +82,19 @@ You can check the balances on accounts with a server:
 node ledger.js wallets fil,miner0:93Wag45TTBijDVg696N5VqjtbmMagGKbZc7W5kLoty8xZ http://localhost:5000
 ```
 
+### TESTING ###
+# Try overloading it
+node ledger.js transaction fil fred 1.369 transfer http://localhost:5001 && \
+node ledger.js transaction fil fred 2.369 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
+node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
+node ledger.js transaction fil olga 1.369 transfer http://localhost:5001 && \
+node ledger.js transaction olga evan 1.369 transfer http://localhost:5003
+
+# Check balances match across servers after transactions
+node ledger.js wallets ALL http://localhost:5000 && \
+node ledger.js wallets ALL http://localhost:5001 && \
+node ledger.js wallets ALL http://localhost:5003
+
 ### UI
 If you're interested in helping build out this project or the UI for it, get in touch. 

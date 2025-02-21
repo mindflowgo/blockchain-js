@@ -35,7 +35,7 @@ async function main(){
     
     switch( method ){
         case 'wallets': {
-            let walletNames = param1.split(',').map( n=>ledger.buildTransactionName(n) ).join(',') // may be multiple hashes comma separated
+            let walletNames = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>ledger.buildTransactionName(n) ).join(',') // may be multiple hashes comma separated
             const url = param2
             let wallets = []
             if( walletNames.length<1 ){
@@ -62,7 +62,7 @@ async function main(){
             wallets.sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
                 if( !(name.length===0 && i.name === '_') ){
-                    const seqInfo = i.seq === 0 ? ':    ' : '/' + i.seq + ':' + ' '.repeat(3 - i.seq.toString().length)
+                    const seqInfo = i.tx.seq === 0 ? ':    ' : '/' + i.tx.seq + ':' + ' '.repeat(3 - i.tx.seq.toString().length)
                     console.log( `   - ${name}${seqInfo}${' '.repeat(20-name.length)} $ ${i.balance || '0'} ${' '.repeat(20-i.balance.toString().length)}`)
                 }})
             

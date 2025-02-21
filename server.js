@@ -100,6 +100,11 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 response.blockAtHeight = { index, hash }
             }
 
+            // if their BH is more, ask for their blocks!
+            if( blockchainHeight > miner.blockchain.height() ){
+                console.log( ` .. we should be getting their additional blocks!`)
+                miner.syncMissingBlocks()
+            }
             res.end( JSON.stringify({ error: false, ...response }) )
             }, miner.nodeState))
         
@@ -184,8 +189,26 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                         console.log( `ERROR! We successfully did transaction but it's balance (${miner.ledger.wallets[publicKey].balance}) is NOT what announcement said (${balance}) `)
                 
                     // announce to anyone but the source
-                } else 
+                } else {
                     console.log( ` x skipping transaction, already in system (${index})` )
+                }
+                })
+                return { result }
+            }, miner.nodeState))
+
+        .post('/transactions/expired', handlePOST(async (transactions,head) => {
+            let result = []
+            transactions.forEach( t => {
+                const transResult = miner.transactionReverse( t )
+                result.push( transResult )
+                console.log( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount})` )
+                if( transResult.error ){
+                    console.log( `ERROR! ${transResult.error}}` )
+                } else {
+                    // broadcast it onward to peers if it was valid, and we killed it.
+                    // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
+                    console.log( `- Expired transaction, and relaying onward it's gone.)`,t )
+                }
                 })
                 return { result }
             }, miner.nodeState))
@@ -224,7 +247,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         // get fee and seq #
         .post('/transactions/prepare', handlePOST(async (queries,head) => {
-            console.log(`>> [${head.nodeToken}]${head.url}`)
+            console.log(`>> [${head.nodeToken}]${head.url}` )
             let result = []
             queries.forEach( ({ src, amount })=> {
                 // now try to complete transaction
@@ -233,7 +256,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 if( srcWallet.error ){
                     result.push( srcWallet )
                 } else {
-                    const seq = srcWallet.seq
+                    const seq = srcWallet.tx.seq
                     if( seq.error )
                         result.push( seq )
                     else
