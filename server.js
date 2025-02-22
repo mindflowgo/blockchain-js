@@ -57,12 +57,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
     const nodeName = process.argv[3]
     const host = 'localhost'
     let port = Number(process.argv[4]) || 3000
-    let nodes = []
-    if( process.argv[5] ) nodes = process.argv[5].includes(',') ? process.argv[5].split(',') : [ process.argv[5] ]
+    let hosts = []
+    if( process.argv[5] ) hosts = process.argv[5].includes(',') ? process.argv[5].split(',') : [ process.argv[5] ]
 
     async function main() {
         // start miner memory process
-        const miner = new Miner({ nodeName, host, port, nodes, dataPath });
+        const miner = new Miner({ nodeName, host, port, hosts, dataPath });
         miner.blockchain.compress = flags !== 'debug'
 
         // now run webserver to engage with network
@@ -79,33 +79,6 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             const fromIndex = Number(req.query.fromIndex) + 1
             const result = miner.blockchain.getBlockchain(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
-            }, miner.nodeState))
-
-        .get('/node/status', handleGET((res, req) => {
-            const blockchainHeight = req.query.bH
-            console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
-
-            const response = {
-                nodeName: miner.nodeName,
-                nodeState: miner.nodeState,
-                timestamp: time(),
-                pendingTransactionsCnt: miner.pendingTransactions.length,
-                blockchainHeight: miner.blockchain.height(),
-                blockAtHeight: {}
-            }
-
-            // if requestee less height, give the hash for THEIR last block (for them to verify against)
-            if( blockchainHeight <= miner.blockchain.height() ){
-                const { index, hash } = miner.blockchain.getBlock(blockchainHeight)
-                response.blockAtHeight = { index, hash }
-            }
-
-            // if their BH is more, ask for their blocks!
-            if( blockchainHeight > miner.blockchain.height() ){
-                console.log( ` .. we should be getting their additional blocks!`)
-                miner.syncMissingBlocks()
-            }
-            res.end( JSON.stringify({ error: false, ...response }) )
             }, miner.nodeState))
         
         .get('/node/wallets', handleGET((res, req) => {
@@ -137,12 +110,40 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
 
+
+            .get('/node/status', handleGET((res, req) => {
+                const [ blockchainHeight, blockHash ]= req.query.bH.split(':')
+                console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()} blockchainHeight(${blockchainHeight})`)
+    
+                const response = {
+                    nodeName: miner.nodeName,
+                    nodeState: miner.nodeState,
+                    timestamp: time(),
+                    pendingTransactionsCnt: miner.pendingTransactions.length,
+                    blockchainHeight: miner.blockchain.height(),
+                    blockAtHeight: {}
+                }
+    
+                // if requestee less height, give the hash for THEIR last block (for them to verify against)
+                if( blockchainHeight <= miner.blockchain.height() ){
+                    const { index, hash }= miner.blockchain.getBlock(blockchainHeight)
+                    response.blockAtHeight = { index, hash }
+                }
+    
+                // if their BH is more, ask for their blocks!
+                if( blockchainHeight > miner.blockchain.height() ){
+                    console.log( ` .. we should be getting their additional blocks!`)
+                    miner.syncMissingBlocks()
+                }
+                res.end( JSON.stringify({ error: false, ...response }) )
+                }, miner.nodeState))
+                            
         .post('/node/announce', handlePOST(async (info,head) => {
             console.log( `>> [${head.nodeToken}]${head.url} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',')})` )
 
             // include the post contactee, and add to our peer list
             info.peers.push( info.hostname ) 
-            miner.addPeers( info.peers )
+            miner.addPeerHosts( info.peers )
 
             // they sent index/hash of their latest block, we'll send our hash for that block
             return { error: false, ...miner.pingInfo(info.blockAtHeight.index) }
