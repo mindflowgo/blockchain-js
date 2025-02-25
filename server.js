@@ -19,7 +19,7 @@
 import dotenv from 'dotenv'
 import uWS from 'uWebSockets.js' // npm install uNetworking/uWebSockets.js#v20.51.0
 // import WebSocket from 'ws';
-import { urlCall, fixRounding, time, sha256Hash, waitReady, handleGET, handlePOST } from './lib/helper.js'
+import { urlCall, fixRounding, time, sha256Hash, waitReady, handleGET, handlePOST, debug } from './lib/helper.js'
 import Miner from './lib/Miner.js'
 
 // let COMPRESS_BLOCKFILES = false
@@ -47,8 +47,8 @@ let dataPath = './data'
 // if run from terminal, spawn up
 if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
     if( process.argv.length<4 ){
-        console.log( "MINER Process, run from terminal:" )
-        console.log( "node miner.js [debug|prod] [nodeName] [port] [peers: IP:port,IP:port]")
+        debug( 'green', "MINER Process, run from terminal:" )
+        debug( 'green', "node miner.js [debug|prod] [nodeName] [port] [peers: IP:port,IP:port]")
         process.exit()
     }
 
@@ -68,28 +68,28 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         // now run webserver to engage with network
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
         .get('/blocks/hashes', handleGET((res, req) => {
-            console.log(`>> [${req.nodeToken}]${req.url}`)
+            debug('dim', `>> [${req.nodeToken}]${req.url}`)
             const fromIndex = Number(req.query.fromIndex)
             const result = miner.blockchain.getBlockchainHashes(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
 
         .get('/blocks', handleGET((res, req) => {
-            console.log(`>> [${req.nodeToken}]${req.url}`)
+            debug('dim', `>> [${req.nodeToken}]${req.url}`)
             const fromIndex = Number(req.query.fromIndex)
             const result = miner.blockchain.getBlockchain(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
         
         .get('/node/wallets', handleGET((res, req) => {
-                console.log(`>> [${req.nodeToken}]${req.url}:`)
-                const wallets = req.query.wallets === 'ALL' ? [] : req.query.wallets.split(',')
-                const result = miner.ledger.walletBalances(wallets)
-                res.end( JSON.stringify({ error: false, result }) )
-                }, miner.nodeState))
+            debug('dim', `>> [${req.nodeToken}]${req.url}:`)
+            const wallets = req.query.wallets === 'ALL' ? [] : req.query.wallets.split(',')
+            const result = miner.ledger.walletBalances(wallets)
+            res.end( JSON.stringify({ error: false, result }) )
+            }, miner.nodeState))
 
         .get('/transactions/verify', handleGET((res, req) => {
-            console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
+            debug('dim', `>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
 
             let result = []
             if( req.query.hash ){
@@ -111,7 +111,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }, miner.nodeState))
                             
         .post('/node/announce', handlePOST(async (info,head) => {
-            console.log( `>> [${head.nodeToken}]${head.url} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
+            debug( 'dim', `>> [${head.nodeToken}]${head.url} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
 
             // include the post contactee, and add to our peer list
             info.peers.push( info.hostname ) 
@@ -122,35 +122,35 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }, miner.nodeState))
 
         .post('/blocks/announce', handlePOST(async (blocks,head) => {
-            console.log( `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
+            debug( 'dim', `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
 
             miner.nodeState = 'LOADING'
             // prevent attempting to write it till we know if this announced block added
             if( miner.workerStatus === 'MINING' ){
-                console.log( `  ! pausing our mining`)
+                debug( 'yellow', `  ! pausing our mining`)
                 miner.workerStatus = 'MINING_PAUSE' 
             }
             // we may have a situation where this block will have transactions that override pendingTransactions
             // let's pro-actively create out those pendings so this works.
-            if( miner.pendingTransactions.length>0 ) console.log( ` ...pendingTransactions: `, miner.pendingTransactions )
+            if( miner.pendingTransactions.length>0 ) debug( 'dim', ` ...pendingTransactions: `, miner.pendingTransactions )
             let blockMaxIndex = miner.blockchain.height()
             blocks.forEach( block => {
                 // only accept announcement blocks that are chronological to our blockchain height
-                console.log( ` incoming block (#${block.index}/${block.hash}) miner.blockchain.height()='${miner.blockchain.height()}` )
+                debug( 'dim', ` incoming block (#${block.index}/${block.hash}) miner.blockchain.height()='${miner.blockchain.height()}` )
                 if( block.index === blockMaxIndex++ ){
                     block.transactions.forEach( t => {
                         console.log( ` block trans: ${t.src.split(':')[0]}/${t.seq}` )
                         const conflictTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash !== t.hash )
                         const matchTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq )
                         if( conflictTransaction.length > 0 ){
-                            console.log( ` .. conflict transaction, eliminating it before adding blockChain block #${t.index}`, conflictTransaction )
+                            debug( 'red', ` .. conflict transaction, eliminating it before adding blockChain block #${t.index}`, conflictTransaction )
                             miner.transactionReverse(conflictTransaction)
                         } else if( matchTransaction.length > 0 ){
-                            console.log( ` .. match transaction, we found matching in blockChain block #${t.index}`, matchTransaction )
+                            debug( ` .. match transaction, we found matching in blockChain block #${t.index}`, matchTransaction )
                         }
                     })
                 } else {
-                    console.log( `    ! skipping block #${block.index}, expecting next block to be ${blockMaxIndex-1}`)
+                    debug( 'red', `    ! skipping block #${block.index}, expecting next block to be ${blockMaxIndex-1}`)
                 }
             })
             const addResult = miner.blockchain.addBlockchain(blocks)
@@ -169,7 +169,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // then discover block already exists, but wasted CPU)
             if( (miner.workerStatus.includes('MINING') || miner.workerStatus.includes('SOLVED')) && 
                 miner.workerBlock.index >= blocks[0].index ){
-                console.log( `**CRAP** Incoming mined-block SAME index as ours (our completion state: ${miner.workerStatus}), `
+                debug( 'yellow', `**CRAP** Incoming mined-block SAME index as ours (our completion state: ${miner.workerStatus}), `
                             +`aborting/cleaning-up our mining effort; reversing transactions.` )
                 miner.worker.postMessage({action: 'ABORT' })
                 // wait for worker to reverse the block, transactions, etc.
@@ -184,8 +184,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             transactions.forEach( t => {
                 // delete administrative fields (use these for decision making)
-                const { isNew, index } = miner.blockchain.findOrCreateHash( t.hash )
-                if( isNew ){ 
+                const { error, isNew, index } = miner.blockchain.findOrCreateHash( t.hash )
+                if( !error && isNew ){ 
                     // push into our transaction queue
                     miner.pendingTransactions.push( t )
                     // extract miner-meta-data, then calculate change to users balances
@@ -193,13 +193,13 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                     const transResult = miner.ledger.transaction(transaction) 
                     result.push( transResult )
                     const publicKey = miner.ledger.getPublicKey(transaction.src)
-                    console.log( `>> [${head.nodeToken}]${head.url} txStake(${transResult.txStake}) amount(${miner.ledger.wallets[publicKey].amount})` ) // publicKey(${publicKey}), expected balance(${balance}) transaction: `, transResult )
+                    debug( `>> [${head.nodeToken}]${head.url} txStake(${transResult.txStake}) amount(${miner.ledger.wallets[publicKey].amount})` ) // publicKey(${publicKey}), expected balance(${balance}) transaction: `, transResult )
                     if( !transResult.error && miner.ledger.wallets[publicKey].balance !== balance )
                         console.log( `ERROR! We successfully did transaction but it's balance (${miner.ledger.wallets[publicKey].balance}) is NOT what announcement said (${balance}) `)
                 
                     // announce to anyone but the source
                 } else {
-                    console.log( ` x skipping transaction, already in system (${index})` )
+                    debug( 'dim', ` x skipping transaction, already in system (${index}): ${error||''}` )
                 }
                 })
                 return { result }
@@ -208,15 +208,15 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .post('/transactions/expired', handlePOST(async (transactions,head) => {
             let result = []
             transactions.forEach( t => {
-                console.log( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
+                debug( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
                 const transResult = miner.transactionReverse( t )
                 result.push( transResult )
                 if( transResult.error ){
-                    console.log( `ERROR! ${transResult.error}}` )
+                    debug( 'red', `ERROR! ${transResult.error}}` )
                 } else {
                     // broadcast it onward to peers if it was valid, and we killed it.
                     // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
-                    console.log( `- Expired transaction, and relaying onward it's gone.)`,t )
+                    debug( 'blue', `- Expired transaction, and relaying onward it's gone.)`,t )
                 }
                 })
                 return { result }
@@ -228,17 +228,11 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 const { src, dest, seq, amount, hash, txStake }= transactionData
 
                 // now try to complete transaction
-                console.log(`>> [${head.nodeToken}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount}) txStake(${txStake||'-'})`)
+                debug( 'dim', `>> [${head.nodeToken}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount}) txStake(${txStake||'-'})`)
                 
-                // const { isNew, index }= miner.blockchain.findOrCreateHash(hash)
-                // if( !isNew ){
-                //     console.log( `   x rejecting transaction: already in our blockchain @ ${index>0 ? '#'+index : 'mempool'}: ${hash}`)
-                //     result.push({ error: `Already in our blockchain @ #${index} with ${hash}` })
-                //     continue
-                // }
                 const newTransaction = miner.transaction(transactionData) // includes miner meta-data (txStake, balance)
-                // console.log( ` /transactions: newTransaction:`, newTransaction )
                 const { error, fee, seq: postSeq, hash: postHash, balance }= newTransaction
+
                 result.push({ error, hash: postHash, fee, seq: postSeq, balance })
                 if( error ){
                     console.log( `   x Rejected: ${error}`)
@@ -247,7 +241,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 }
 
                 // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
-                console.log( `        ACCEPTED ${postHash} -> announcing to peers` )
+                debug( `        ACCEPTED ${postHash} -> announcing to peers` )
                 miner.broadcastPeers({ path: '/transactions/announce', data: [newTransaction], all: true })
             }
             // console.log( `[transaction] result:`, result )
@@ -256,7 +250,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         // get fee and seq #
         .post('/transactions/prepare', handlePOST(async (queries,head) => {
-            console.log(`>> [${head.nodeToken}]${head.url}` )
+            debug('dim',`>> [${head.nodeToken}]${head.url}` )
             let result = []
             queries.forEach( ({ src, amount })=> {
                 // now try to complete transaction
@@ -282,7 +276,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 const updateWallet = miner.ledger.updateWallet(name, walletData)
                 result.push({ name, error: updateWallet.error })
             })
-            console.log( `>>${head.nodeToken}${head.url} result:`, result )
+            debug( `>>${head.nodeToken}${head.url} result:`, result )
             return { result }
             }, miner.nodeState))
 
@@ -294,9 +288,9 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .listen(host, port, (token) => {
             if (token) {
                 // port = uWS.us_socket_local_port(token)
-                console.log(`Miner running on ${host}:${port} ${miner.nodeState}`)
+                debug('green', `Miner running on ${host}:${port} ${miner.nodeState}`)
             } else {
-                console.log('Failed finding available port')
+                debug('red', 'Failed finding available port')
                 process.exit(-1)
             }
         })
