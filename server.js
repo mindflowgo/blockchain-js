@@ -69,14 +69,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
         .get('/blocks/hashes', handleGET((res, req) => {
             console.log(`>> [${req.nodeToken}]${req.url}`)
-            const fromIndex = Number(req.query.fromIndex) + 1
+            const fromIndex = Number(req.query.fromIndex)
             const result = miner.blockchain.getBlockchainHashes(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
 
         .get('/blocks', handleGET((res, req) => {
             console.log(`>> [${req.nodeToken}]${req.url}`)
-            const fromIndex = Number(req.query.fromIndex) + 1
+            const fromIndex = Number(req.query.fromIndex)
             const result = miner.blockchain.getBlockchain(fromIndex, 100)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
@@ -109,37 +109,9 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
-
-
-            .get('/node/status', handleGET((res, req) => {
-                const [ blockchainHeight, blockHash ]= req.query.bH.split(':')
-                console.log(`>> [${req.nodeToken}]${req.url}?${req.getQuery()} blockchainHeight(${blockchainHeight})`)
-    
-                const response = {
-                    nodeName: miner.nodeName,
-                    nodeState: miner.nodeState,
-                    timestamp: time(),
-                    pendingTransactionsCnt: miner.pendingTransactions.length,
-                    blockchainHeight: miner.blockchain.height(),
-                    blockAtHeight: {}
-                }
-    
-                // if requestee less height, give the hash for THEIR last block (for them to verify against)
-                if( blockchainHeight <= miner.blockchain.height() ){
-                    const { index, hash }= miner.blockchain.getBlock(blockchainHeight)
-                    response.blockAtHeight = { index, hash }
-                }
-    
-                // if their BH is more, ask for their blocks!
-                if( blockchainHeight > miner.blockchain.height() ){
-                    console.log( ` .. we should be getting their additional blocks!`)
-                    miner.syncMissingBlocks()
-                }
-                res.end( JSON.stringify({ error: false, ...response }) )
-                }, miner.nodeState))
                             
         .post('/node/announce', handlePOST(async (info,head) => {
-            console.log( `>> [${head.nodeToken}]${head.url} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',')})` )
+            console.log( `>> [${head.nodeToken}]${head.url} hostname(${info.hostname}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
 
             // include the post contactee, and add to our peer list
             info.peers.push( info.hostname ) 
@@ -153,16 +125,52 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             console.log( `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
 
             miner.nodeState = 'LOADING'
+            // prevent attempting to write it till we know if this announced block added
+            if( miner.workerStatus === 'MINING' ){
+                console.log( `  ! pausing our mining`)
+                miner.workerStatus = 'MINING_PAUSE' 
+            }
+            // we may have a situation where this block will have transactions that override pendingTransactions
+            // let's pro-actively create out those pendings so this works.
+            if( miner.pendingTransactions.length>0 ) console.log( ` ...pendingTransactions: `, miner.pendingTransactions )
+            let blockMaxIndex = miner.blockchain.height()
+            blocks.forEach( block => {
+                // only accept announcement blocks that are chronological to our blockchain height
+                console.log( ` incoming block (#${block.index}/${block.hash}) miner.blockchain.height()='${miner.blockchain.height()}` )
+                if( block.index === blockMaxIndex++ ){
+                    block.transactions.forEach( t => {
+                        console.log( ` block trans: ${t.src.split(':')[0]}/${t.seq}` )
+                        const conflictTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash !== t.hash )
+                        const matchTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq )
+                        if( conflictTransaction.length > 0 ){
+                            console.log( ` .. conflict transaction, eliminating it before adding blockChain block #${t.index}`, conflictTransaction )
+                            miner.transactionReverse(conflictTransaction)
+                        } else if( matchTransaction.length > 0 ){
+                            console.log( ` .. match transaction, we found matching in blockChain block #${t.index}`, matchTransaction )
+                        }
+                    })
+                } else {
+                    console.log( `    ! skipping block #${block.index}, expecting next block to be ${blockMaxIndex-1}`)
+                }
+            })
             const addResult = miner.blockchain.addBlockchain(blocks)
-            if( addResult.error ) return addResult
+            if( addResult.error ){
+                miner.workerStatus = miner.workerStatus.replace('_PAUSE','') // ex. 'MINING_PAUSE|SOLVE_PAUSE => MINING|SOLVE
+                miner.nodeState = 'ONLINE'
+                return addResult
+            }
 
-            const { addBlockCnt, transactionCnt }= addResult
+            // remove any that were lingering in the pendingTransactions; go online again
+            const { addBlockCnt, hashes, transactionCnt }= addResult
+            miner.prunePendingTransactions( hashes )
             miner.nodeState = 'ONLINE'
 
             // if we are mining same block, cancel our block (we could leave it to finish, 
             // then discover block already exists, but wasted CPU)
-            if( miner.workerStatus === 'MINING' && miner.workerBlock.index >= blocks[0].index ){
-                console.log( `**CRAP** Incoming mined-block SAME index as ours, aborting our mining effort; reversing transactions.` )
+            if( (miner.workerStatus.includes('MINING') || miner.workerStatus.includes('SOLVED')) && 
+                miner.workerBlock.index >= blocks[0].index ){
+                console.log( `**CRAP** Incoming mined-block SAME index as ours (our completion state: ${miner.workerStatus}), `
+                            +`aborting/cleaning-up our mining effort; reversing transactions.` )
                 miner.worker.postMessage({action: 'ABORT' })
                 // wait for worker to reverse the block, transactions, etc.
                 await waitReady(miner, 'workerStatus', 'READY')
@@ -200,9 +208,9 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .post('/transactions/expired', handlePOST(async (transactions,head) => {
             let result = []
             transactions.forEach( t => {
+                console.log( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
                 const transResult = miner.transactionReverse( t )
                 result.push( transResult )
-                console.log( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount})` )
                 if( transResult.error ){
                     console.log( `ERROR! ${transResult.error}}` )
                 } else {

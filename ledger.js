@@ -155,7 +155,7 @@ async function main(){
         // node ledger.js deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
         case 'miner-deposit': {
             const src = name
-            const dest = param2
+            const dest = ledger.buildTransactionName(param2)
             const amount = Number(param3 || 0)
             const url = param4
 
