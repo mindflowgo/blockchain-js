@@ -36,25 +36,47 @@ async function main(){
     switch( method ){
         case 'wallets': {
             let walletNames = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>ledger.buildTransactionName(n) ).join(',') // may be multiple hashes comma separated
-            const url = param2
+            const url = param2.split(',') || [ param2 ]
+
             let wallets = []
             if( walletNames.length<1 ){
                 console.log( `Please include some wallets to get information for! Ex. node ledger.js wallets fil:publickey,fred:publickey http://localhost:5000`)
                 return
             }
 
-            console.log( `\nExisting wallets & balances on (${url || 'me'}):` )
             // console.log( ledger.walletBalances() )
 
-            if( url ){
-                const response = await urlCall({ hostname: url, path: `/node/wallets?wallets=${walletNames}` })
-                // console.log( `response: `, response )
-                if( response.error ){
-                    console.log( response.error )
-                    return
+            if( url[0].length > 0 ){
+                console.log( `\nExisting wallets & balances on servers (${url.join(',')}):` )
+                for (let [idx, host] of url.entries()) {
+                    const response = await urlCall({ hostname: host, path: `/node/wallets?wallets=${walletNames}` })
+                    // console.log( `${idx}: response (${response.result.length}) ` )
+                    if( response.error ){
+                        console.log( response.error )
+                        return
+                    }
+                    if( idx===0 ){
+                        wallets = response.result
+                        for( let i=0; i<wallets.length; i++ ) wallets[i].note = ''
+                    } else {
+                        response.result.forEach((wallet) => {
+                            const wIdx = wallets.findIndex(w => w.publicKey === wallet.publicKey)
+                            if (wIdx !== -1) {
+                                if (wallets[wIdx].balance !== wallet.balance) {
+                                    wallets[wIdx].note += `${idx}: $${fixRounding(wallets[wIdx].balance - wallet.balance)} `
+                                }
+                                if (wallets[wIdx].tx?.seq !== wallet.tx?.seq) {
+                                    wallets[wIdx].note += `${idx}: Seq(${wallets[wIdx].tx?.seq||'-'}|${wallet.tx?.seq||'-'}) `
+                                }
+                            } else {
+                                // If the wallet is not in the list, add it
+                                wallets.push({ ...wallet, note: '' })
+                            }
+                        })
+                    }
                 }
-                wallets = response.result
             } else {
+                console.log( `\nExisting wallets & balances on local:` )
                 wallets = ledger.walletBalances()
             }
 
@@ -62,8 +84,8 @@ async function main(){
             wallets.sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
                 if( !(name.length===0 && i.name === '_') ){
-                    const seqInfo = i.tx.seq === 0 ? ':    ' : '/' + i.tx.seq + ':' + ' '.repeat(3 - i.tx.seq.toString().length)
-                    console.log( `   - ${name}${seqInfo}${' '.repeat(20-name.length)} $ ${i.balance || '0'} ${' '.repeat(20-i.balance.toString().length)}`)
+                    const seqInfo = !i.tx?.seq ? ':    ' : '/' + i.tx.seq + ':' + ' '.repeat(3 - i.tx.seq.toString().length)
+                    console.log( `   - ${name}${seqInfo}${' '.repeat(20-name.length)} $ ${i.balance || '0'} ${' '.repeat(20-i.balance.toString().length)} ${i.note || ''}`)
                 }})
             
             break
