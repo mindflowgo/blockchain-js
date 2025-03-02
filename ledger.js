@@ -1,5 +1,5 @@
 import Ledger from './lib/Ledger.js'
-import { urlCall, sha256Hash, fixRounding, time } from './lib/helper.js'
+import { urlCall, sha256Hash, fixRounding, time, debug } from './lib/helper.js'
 
 // Terminal functionality - this only runs when the file is run directly from terminal (so it's dual-use)
 
@@ -50,7 +50,6 @@ async function main(){
                 console.log( `\nExisting wallets & balances on servers (${url.join(',')}):` )
                 for (let [idx, host] of url.entries()) {
                     const response = await urlCall({ hostname: host, path: `/node/wallets?wallets=${walletNames}` })
-                    // console.log( `${idx}: response (${response.result.length}) ` )
                     if( response.error ){
                         console.log( response.error )
                         return
@@ -62,8 +61,11 @@ async function main(){
                         response.result.forEach((wallet) => {
                             const wIdx = wallets.findIndex(w => w.publicKey === wallet.publicKey)
                             if (wIdx !== -1) {
-                                if (wallets[wIdx].balance !== wallet.balance) {
-                                    wallets[wIdx].note += `${idx}: $${fixRounding(wallets[wIdx].balance - wallet.balance)} `
+                                if (wallets[wIdx].tx.balance !== wallet.tx.balance) {
+                                    wallets[wIdx].note += `${idx}: $${fixRounding(wallets[wIdx].tx.balance - wallet.tx.balance)} `
+                                }
+                                if (wallets[wIdx].onChain.balance !== wallet.onChain.balance) {
+                                    wallets[wIdx].note += `${idx}: $${fixRounding(wallets[wIdx].onChain.balance - wallet.onChain.balance)} `
                                 }
                                 if (wallets[wIdx].tx?.seq !== wallet.tx?.seq) {
                                     wallets[wIdx].note += `${idx}: Seq(${wallets[wIdx].tx?.seq||'-'}|${wallet.tx?.seq||'-'}) `
@@ -81,13 +83,15 @@ async function main(){
             }
 
             // arrange alphabettically and display
-            wallets.sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
+            debug('dim',`   = Name =${' '.repeat(15)} = TX Balance =${' '.repeat(4)} = Block Balance =`)
+            wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
-                if( !(name.length===0 && i.name === '_') ){
-                    const seqInfo = !i.tx?.seq ? ':    ' : '/' + i.tx.seq + ':' + ' '.repeat(3 - i.tx.seq.toString().length)
-                    console.log( `   - ${name}${seqInfo}${' '.repeat(20-name.length)} $ ${i.balance || '0'} ${' '.repeat(20-i.balance.toString().length)} ${i.note || ''}`)
-                }})
-            
+                if( !(name.length===0 && name === '_') && i.tx.balance>0 ){
+                    let seqInfo = i.tx?.seq > 0 || i.onChain?.seq > 0 ? `${i.tx.seq},${i.onChain.seq}` : ''
+                    seqInfo = !seqInfo ? ':     ' : '/' + seqInfo + ':' //  + ' '.repeat(12 - seqInfo.length)
+                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(15-name.length)} $ ${i.tx.balance || '0'} ${' '.repeat(15-i.tx.balance.toString().length)} $ ${i.onChain.balance || '0'} ${' '.repeat(20-i.tx.balance.toString().length)} ${i.note || ''}`)
+                }
+                })
             break
             }
         case 'check': {
@@ -144,6 +148,10 @@ async function main(){
 
             // let's get the fee for transaction & seq
             const src = ledger.buildTransactionName(name)
+            if( src.error ){
+                console.log( src.error )
+                return
+            }
             response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
             if( response.error || !response.result ){
                 console.log( `  x invalid transaction prepare request, aborting:`, response )
@@ -170,7 +178,7 @@ async function main(){
             if( result.error )
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted. Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
+                console.log( ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
             break
             }
 
@@ -181,6 +189,10 @@ async function main(){
             const amount = Number(param3 || 0)
             const url = param4
 
+            if( dest.error ){
+                debug('red',dest.error)
+                return
+            }
             // const src = ledger.buildTransactionName(name)
             // if( src.error ){
             //     console.log( ` * rejected: ${src.error}`)
@@ -206,7 +218,7 @@ async function main(){
             if( result.error )
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted. Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
+                console.log( ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
             break
             }
 

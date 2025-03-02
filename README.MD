@@ -43,7 +43,9 @@ curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]'
 
 ### Grant Money to Miner
 ```bash
-curl --data '[{"src":"_mint","dest":"miner1","amount":"202","type":"mintAirDrop"}]' http://localhost:5000/transactions
+curl --data '[{"src":"_mint","dest":"miner0","amount":"10000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"10000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"_mint","dest":"miner3","amount":"10000","type":"mintAirDrop"}]' http://localhost:5003/transactions
 ```
 
 ### User Deposit in Miner; then Withdraw to User
@@ -87,11 +89,45 @@ You can check the balance across multiple servers to see if it's the same:
 node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003
 ```
 
+### See Pending Transactions
+Mining servers will hold open transactions that aren't yet on the blockchain, that you can see. In BTC they are in whats called 'mempool', and 
+aren't confirmed till written to blocks.
+curl http://localhost:5003/transactions/pending
+
+
 ### TESTING ###
+# Run a few servers - 5002 does not exist, miner0 learns about other miners
+node server.js debug miner0 5000 && \
+node server.js debug miner1 5001 http://localhost:5000,http://localhost:5002 && \
+node server.js debug miner3 5003 http://localhost:5000,http://localhost:5003
+
+# Increase mint
+curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]' http://localhost:5000/transactions
+
+# AirDrop to the miners
+curl --data '[{"src":"_mint","dest":"miner0","amount":"10000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"10000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"_mint","dest":"miner3","amount":"10000","type":"mintAirDrop"}]' http://localhost:5003/transactions
+
+# Create local accounts
+node ledger.js create fil
+node ledger.js create fred
+node ledger.js create olga
+node ledger.js create evan
+
+# Deposit money into accounts of users
+node ledger.js miner-deposit miner0 fil 10 http://localhost:5000/ && \
+node ledger.js miner-deposit miner1 fred 12 http://localhost:5001/ && \
+node ledger.js miner-deposit miner3 olga 11 http://localhost:5003/ && \
+node ledger.js miner-deposit miner3 evan 25 http://localhost:5003/ 
+
 # Try overloading it
 node ledger.js transaction fil fred 1.369 transfer http://localhost:5001 && \
-node ledger.js transaction fil fred 2.369 transfer http://localhost:5003 && \
+node ledger.js transaction fred fil 2.369 transfer http://localhost:5003 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
+node ledger.js transaction fil olga 2.369 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner3 olga 210 http://localhost:5003 && \
+node ledger.js miner-deposit miner1 evan 205 http://localhost:5001 && \
 node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
 node ledger.js transaction fil olga 6 transfer http://localhost:5001 && \
 node ledger.js transaction olga evan 1.369 transfer http://localhost:5003

@@ -84,9 +84,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .get('/node/wallets', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeToken}]${req.url}:`)
             const wallets = req.query.wallets === 'ALL' ? [] : req.query.wallets.split(',')
-            debug('dim')
             const result = miner.ledger.walletBalances(wallets)
-            debug('reset')
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
 
@@ -111,9 +109,17 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
-                            
+
+        .get('/transactions/pending', handleGET((res, req) => {
+            debug('dim', `>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
+
+            let result = miner.pendingTransactions
+            console.log( result )
+            res.end( JSON.stringify({ error: false, result }) )
+            }, miner.nodeState))            
+
         .post('/node/announce', handlePOST(async (info,head) => {
-            debug( 'dim', `>> [${head.nodeToken}]${head.url} hostname(${info.hostname.replace('http://localhost:','')}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
+            debug( 'dim', `>> [${head.nodeToken}]${head.url} hostname(${info.hostname.replace('http://localhost:','')}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) pendingTransactions(${info.pendingTransactionsCnt}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
 
             // include the post contactee, and add to our peer list
             info.peers.push( info.hostname ) 
@@ -132,8 +138,9 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 debug( 'yellow', `   \_ pausing our mining`)
                 miner.worker.status = 'MINING_PAUSE' 
             }
-            // we may have a situation where this block will have transactions that override pendingTransactions
-            // let's pro-actively create out those pendings so this works.
+            // this only allows announced blocks that would chronologically fit onto our chain; in the event, 
+            // our chain is off (or theirs), we simply ignore the block announcement -- we re-sync chains in 
+            // heartbeat process
             // if( miner.pendingTransactions.length>0 ) debug( 'dim', ` ...pendingTransactions: `, miner.pendingTransactions )
             let blockMaxIndex = miner.blockchain.height()
             blocks.forEach( block => {
@@ -142,20 +149,20 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 if( block.index === blockMaxIndex++ ){
                     block.transactions.forEach( t => {
                         // console.log( ` block trans: ${t.src.split(':')[0]}/${t.seq}` )
-                        const conflictTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash !== t.hash )
+                        const conflictTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
                         const matchTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
                         if( conflictTransaction.length > 0 ){
-                            debug( 'red', `  ! announced block (${t.src.split(':')[0]}/${t.seq}) CONFLICTS with one of ours (same user/seq), clearing before addBlockchain(block #${block.index}) transactions ` )
+                            debug( 'red', `  ! announced transaction (${t.src.split(':')[0]}/${t.seq}) CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
                             if( conflictTransaction[0].txStake.indexOf(' MINING:')>0 )
-                                debug( 'red', `  ~ we were already attempting to mine SAME our version: ${conflictTransaction[0].txStake}`)
+                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].txStake}`)
                                 
-                            miner.transactionReverse(conflictTransaction)
+                            // miner.transactionReverse(conflictTransaction[0], { clearPending: true }) // don't bother revesing, it will stale-out
                         } else if( matchTransaction.length > 0 ){
                             debug( 'dim', ` .. incoming block #${block.index} transaction matches a pending transaction we have (good)` )
                         }
                     })
                 } else {
-                    debug( 'red', `    ! skipping block #${block.index}, expecting next block to be ${blockMaxIndex-1}. We will re-sync chain later.`)
+                    debug( 'red', `    ! addBlockchain will skip block #${block.index}, expecting next block to be ${blockMaxIndex-1}. No problem: we will re-sync chain later.`)
                 }
             })
             const addResult = miner.blockchain.addBlockchain(blocks)
@@ -166,7 +173,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }
 
             // remove any that were lingering in the pendingTransactions; go online again
-            const { addBlockCnt, hashes, transactionCnt }= addResult
+            const { addBlockCnt, hashes, transactionCnt, resetLedger }= addResult
+            if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Pending are ignored.`)
             miner.prunePendingTransactions( hashes )
             miner.nodeState = 'ONLINE'
 
@@ -174,7 +182,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // then discover block already exists, but wasted CPU)
             if( (miner.worker.status.includes('MINING') || miner.worker.status.includes('SOLVED')) && 
                 miner.worker.block.index >= blocks[0].index ){
-                debug( 'yellow', `**CRAP** Incoming mined-block SAME index as ours (our completion state: ${miner.worker.status}), `
+                debug( 'yellow', `**CRAP** Incoming mined-block SAME index #${blocks[0].index} as ours (our completion state: ${miner.worker.status}), `
                             +`aborting/cleaning-up our mining effort; reversing transactions.` )
                 miner.worker.node.postMessage({action: 'ABORT' })
                 // wait for worker to reverse the block, transactions, etc.
@@ -213,14 +221,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             transactions.forEach( t => {
                 debug( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
-                const transResult = miner.transactionReverse( t )
+                const transResult = miner.transactionReverse( t, { clearPending:true })
                 result.push( transResult )
                 if( transResult.error ){
                     debug( 'red', `ERROR! ${transResult.error}}` )
                 } else {
                     // broadcast it onward to peers if it was valid, and we killed it.
                     // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
-                    debug( 'blue', `- Expired transaction, and relaying onward it's gone.)`,t )
+                    debug( 'blue', `- Expired transaction ${t.src.split(':')[0]}/${t.seq} > ${t.dest.split(':')[0]} $${t.amount}, txStake(${t.txStake}) and relaying onward it's gone.)` )
                 }
                 })
                 return { result }
@@ -232,14 +240,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 const { src, dest, seq, amount, hash, txStake }= transactionData
 
                 // now try to complete transaction
-                debug( 'cyan', `>> [${head.nodeToken}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount}) txStake(${txStake||'-'})`)
+                debug( 'cyan', `>> [${head.nodeToken}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})`)
                 
                 const newTransaction = miner.transaction(transactionData) // includes miner meta-data (txStake, balance)
                 const { error, fee, seq: postSeq, hash: postHash, balance }= newTransaction
 
                 result.push({ error, hash: postHash, fee, seq: postSeq, balance })
                 if( error ){
-                    console.log( `   x Rejected: ${error}`)
+                    debug('red',`   x Rejected: ${error}`)
                     result.push({ error, hash })
                     continue
                 }
@@ -300,6 +308,6 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
     }
 
     main().catch(err => {
-        console.log(err)
+        debug('red',err)
     })
 }
