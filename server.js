@@ -43,6 +43,7 @@ proof-of-work is found and one branch becomes longer;
 
 let dataPath = './data'
 
+const DEBUG = 1
 
 // if run from terminal, spawn up
 if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
@@ -67,17 +68,11 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         // now run webserver to engage with network
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
-        .get('/blocks/hashes', handleGET((res, req) => {
-            debug('dim', `>> [${req.nodeToken}]${req.url}`)
-            const fromIndex = Number(req.query.fromIndex)
-            const result = miner.blockchain.getBlockchainHashes(fromIndex, 100)
-            res.end( JSON.stringify({ error: false, result }) )
-            }, miner.nodeState))
-
         .get('/blocks', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeToken}]${req.url}`)
-            const fromIndex = Number(req.query.fromIndex)
-            const result = miner.blockchain.getBlockchain(fromIndex, 100)
+            const fromIndex = Number(req.query.fromIndex || 0)
+            const type = ['hashes','meta'].includes(req.query.type) ? req.query.type : ''
+            const result = miner.blockchain.getBlockchain(fromIndex, 100, type)
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))
         
@@ -113,7 +108,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .get('/transactions/pending', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
 
-            let result = miner.pendingTransactions
+            let result = miner.transactionManager.getPending()
             console.log( result )
             res.end( JSON.stringify({ error: false, result }) )
             }, miner.nodeState))            
@@ -141,7 +136,6 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // this only allows announced blocks that would chronologically fit onto our chain; in the event, 
             // our chain is off (or theirs), we simply ignore the block announcement -- we re-sync chains in 
             // heartbeat process
-            // if( miner.pendingTransactions.length>0 ) debug( 'dim', ` ...pendingTransactions: `, miner.pendingTransactions )
             let blockMaxIndex = miner.blockchain.height()
             blocks.forEach( block => {
                 // only accept announcement blocks that are chronological to our blockchain height
@@ -149,12 +143,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 if( block.index === blockMaxIndex++ ){
                     block.transactions.forEach( t => {
                         // console.log( ` block trans: ${t.src.split(':')[0]}/${t.seq}` )
-                        const conflictTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
-                        const matchTransaction = miner.pendingTransactions.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
+                        const conflictTransaction = miner.transactionManager.pending.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
+                        const matchTransaction = miner.transactionManager.pending.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
                         if( conflictTransaction.length > 0 ){
                             debug( 'red', `  ! announced transaction (${t.src.split(':')[0]}/${t.seq}) CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
-                            if( conflictTransaction[0].txStake.indexOf(' MINING:')>0 )
-                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].txStake}`)
+                            if( conflictTransaction[0].meta.txStake.indexOf(' MINING:')>0 )
+                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.txStake}`)
                                 
                             // miner.transactionReverse(conflictTransaction[0], { clearPending: true }) // don't bother revesing, it will stale-out
                         } else if( matchTransaction.length > 0 ){
@@ -175,7 +169,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // remove any that were lingering in the pendingTransactions; go online again
             const { addBlockCnt, hashes, transactionCnt, resetLedger }= addResult
             if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Pending are ignored.`)
-            miner.prunePendingTransactions( hashes )
+            miner.transactionManager.deletePending({ hashes })
             miner.nodeState = 'ONLINE'
 
             // if we are mining same block, cancel our block (we could leave it to finish, 
@@ -193,27 +187,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }, miner.nodeState))
 
         .post('/transactions/announce', handlePOST(async (transactions,head) => {
-            let result = []
-            transactions.forEach( t => {
-                // delete administrative fields (use these for decision making)
-                const { error, isNew, index } = miner.blockchain.findOrCreateHash( t.hash )
-                if( !error && isNew ){ 
-                    // push into our transaction queue
-                    miner.pendingTransactions.push( t )
-                    // extract miner-meta-data, then calculate change to users balances
-                    const { txStake, balance, ...transaction }= t
-                    const transResult = miner.ledger.transaction(transaction) 
-                    result.push( transResult )
-                    const publicKey = miner.ledger.getPublicKey(transaction.src)
-                    debug( 'cyan', `>> [${head.nodeToken}]${head.url} txStake(${transaction.txStake||'-'}) amount(${transaction.amount})` ) // publicKey(${publicKey}), expected balance(${balance}) transaction: `, transResult )
-                    if( !transResult.error && miner.ledger.wallets[publicKey].balance !== balance )
-                        debug('dim',`   ~ Note: We successfully did transaction but it's balance (${miner.ledger.wallets[publicKey].balance}) is NOT what announcement said (${balance}), possible multiple servers hit with request at same time.`)
-                
-                    // announce to anyone but the source
-                } else {
-                    debug( 'dim', ` x skipping transaction, already in system (${index}): ${error||''}` )
-                }
-                })
+            let result = miner.transactionManager.newBatch( transactions )
+
                 return { result }
             }, miner.nodeState))
 
@@ -221,7 +196,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             transactions.forEach( t => {
                 debug( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
-                const transResult = miner.transactionReverse( t, { clearPending:true })
+                const transResult = miner.transactionManager.transactionReverse( t, { clearPending:true })
                 result.push( transResult )
                 if( transResult.error ){
                     debug( 'red', `ERROR! ${transResult.error}}` )
@@ -234,29 +209,27 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 return { result }
             }, miner.nodeState))
 
-        .post('/transactions', handlePOST(async (transactions,head) => {
-            let result = []
-            for( const transactionData of transactions ){
-                const { src, dest, seq, amount, hash, txStake }= transactionData
+        .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
+            const response = miner.transactionManager.newBatch(transactions)
+            // let result = []
+            if( response.error ) return response
 
-                // now try to complete transaction
-                debug( 'cyan', `>> [${head.nodeToken}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})`)
-                
-                const newTransaction = miner.transaction(transactionData) // includes miner meta-data (txStake, balance)
-                const { error, fee, seq: postSeq, hash: postHash, balance }= newTransaction
+            response.result.forEach( (t,idx) => {
+                // show transaction attempted
+                const { src, dest, seq, amount, hash, meta }= transactions[idx]
+                debug( 'cyan', `>> [${head.nodeToken||'API'}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta)}`)
 
-                result.push({ error, hash: postHash, fee, seq: postSeq, balance })
-                if( error ){
+                // show result if error, else just broadcast it to peers
+                const { error, fee, seq: postSeq, hash: postHash, balance }= t
+                if( error ) 
                     debug('red',`   x Rejected: ${error}`)
-                    result.push({ error, hash })
-                    continue
-                }
+                else
+                    // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
+                    miner.broadcastPeers({ path: '/transactions/announce', data: [t] })
+            })
 
-                // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
-                miner.broadcastPeers({ path: '/transactions/announce', data: [newTransaction] })
-            }
             // console.log( `[transaction] result:`, result )
-            return { result }
+            return { result: response.result }
             }, miner.nodeState))
 
         // get fee and seq #
@@ -265,7 +238,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             queries.forEach( ({ src, amount })=> {
                 // now try to complete transaction
-                const fee = miner.transactionFee({ amount })
+                const fee = miner.transactionManager.getFee({ amount })
                 const srcWallet = miner.ledger.getWallet( src )
                 if( srcWallet.error ){
                     result.push( srcWallet )

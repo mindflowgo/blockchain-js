@@ -83,13 +83,13 @@ async function main(){
             }
 
             // arrange alphabettically and display
-            debug('dim',`   = Name =${' '.repeat(15)} = TX Balance =${' '.repeat(4)} = Block Balance =`)
+            debug('dim',`   = Name =${' '.repeat(14)} = TX Balance =${' '.repeat(4)} = Block Balance =`)
             wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
                 if( !(name.length===0 && name === '_') && i.tx.balance>0 ){
                     let seqInfo = i.tx?.seq > 0 || i.onChain?.seq > 0 ? `${i.tx.seq},${i.onChain.seq}` : ''
-                    seqInfo = !seqInfo ? ':     ' : '/' + seqInfo + ':' //  + ' '.repeat(12 - seqInfo.length)
-                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(15-name.length)} $ ${i.tx.balance || '0'} ${' '.repeat(15-i.tx.balance.toString().length)} $ ${i.onChain.balance || '0'} ${' '.repeat(20-i.tx.balance.toString().length)} ${i.note || ''}`)
+                    seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
+                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.tx.balance || '0'} ${' '.repeat(15-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} ${' '.repeat(20-i.tx.balance.toString().length)} ${i.note || ''}`)
                 }
                 })
             break
@@ -178,7 +178,7 @@ async function main(){
             if( result.error )
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
+                console.log( ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
             break
             }
 
@@ -218,7 +218,7 @@ async function main(){
             if( result.error )
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: ${result.balance}` )
+                console.log( ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
             break
             }
 
