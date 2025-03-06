@@ -109,10 +109,29 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             debug('dim', `>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
 
             let result = miner.transactionManager.getPending()
-            console.log( result )
             res.end( JSON.stringify({ error: false, result }) )
-            }, miner.nodeState))            
+            }, miner.nodeState))
 
+        .get('/transactions', handleGET((res, req) => {
+            debug('dim', `>> [${req.nodeToken}]${req.url}?${req.getQuery()}`)
+
+            let result = [], error = ''
+            if( req.query.hash ){
+                const hashes = req.query.hash.split(',')
+                hashes.forEach( hash => {
+                    const hashResult = miner.transactionManager.hashes[hash]
+                    if( hashResult.error ) error += hashResult.error
+                    if( hashResult.index > -1 ){
+                        const block = miner.blockchain.getBlock(hashResult.index)
+                        const transaction = block.transactions.filter( t => t.hash === hash )
+                        if( transaction.length === 1 )
+                            result.push( { ...transaction[0], meta: { blockIdx: block.index } } )
+                    }
+                })
+            }
+            res.end( JSON.stringify({ error: false, result }) )
+            }, miner.nodeState))
+            
         .post('/node/announce', handlePOST(async (info,head) => {
             debug( 'dim', `>> [${head.nodeToken}]${head.url} hostname(${info.hostname.replace('http://localhost:','')}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) pendingTransactions(${info.pendingTransactionsCnt}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
 
@@ -174,13 +193,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
             // if we are mining same block, cancel our block (we could leave it to finish, 
             // then discover block already exists, but wasted CPU)
-            if( (miner.worker.status.includes('MINING') || miner.worker.status.includes('SOLVED')) && 
-                miner.worker.block.index >= blocks[0].index ){
+            if( (miner.worker.status.indexOf('_PAUSE') > -1 ) ){
                 debug( 'yellow', `**CRAP** Incoming mined-block SAME index #${blocks[0].index} as ours (our completion state: ${miner.worker.status}), `
                             +`aborting/cleaning-up our mining effort; reversing transactions.` )
                 miner.worker.node.postMessage({action: 'ABORT' })
-                // wait for worker to reverse the block, transactions, etc.
-                await waitReady(miner, 'worker', 'status', 'READY')
+                // // wait for worker to reverse the block, transactions, etc.
+                // await waitReady(miner, 'worker', 'status', 'READY')
             }
 
             return { addBlockCnt, transactionCnt }

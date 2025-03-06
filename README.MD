@@ -105,9 +105,9 @@ node server.js debug miner3 5003 http://localhost:5000,http://localhost:5003
 curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]' http://localhost:5000/transactions
 
 # AirDrop to the miners
-curl --data '[{"src":"_mint","dest":"miner0","amount":"10000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
-curl --data '[{"src":"_mint","dest":"miner1","amount":"10000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
-curl --data '[{"src":"_mint","dest":"miner3","amount":"10000","type":"mintAirDrop"}]' http://localhost:5003/transactions
+curl --data '[{"src":"_mint","dest":"miner0","amount":"100000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"100000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"_mint","dest":"miner3","amount":"100000","type":"mintAirDrop"}]' http://localhost:5003/transactions
 
 # Create local accounts
 node ledger.js create fil
@@ -126,31 +126,39 @@ node ledger.js transaction fil fred 1.369 transfer http://localhost:5001 && \
 node ledger.js transaction fred fil 2.369 transfer http://localhost:5003 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
 node ledger.js transaction fil olga 2.369 transfer http://localhost:5003 && \
-node ledger.js miner-deposit miner3 olga 210 http://localhost:5003 && \
+node ledger.js miner-deposit miner3 olga 210 http://localhost:5001 && \
 node ledger.js miner-deposit miner1 evan 205 http://localhost:5001 && \
 node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
 node ledger.js transaction fil olga 6 transfer http://localhost:5001 && \
-node ledger.js transaction evan olga 1.369 transfer http://localhost:5003
+node ledger.js transaction evan olga 1.369 transfer http://localhost:5003 "hello love"
 
 # Check balances match across servers after transactions
 node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003
+
+# Transactions Notes
+You can add a public or private note to transactions:
+```bash
+node ledger.js transaction fred jane 100 transfer http://localhost:5001 "*Thanks for the awesome phone :)"
+```
+If it starts with a '*', the note will be encrypted so that ONLY the destination person will be able to see it (it's encrypted for everyone else); if no *, 
+then the note will be publically viewable.
 
 ### UI
 If you're interested in helping build out this project or the UI for it, get in touch. 
 
 
+# Try Stress-Testing 3 Nodes
 node ledger.js miner-deposit miner0 fil 100 http://localhost:5003/ && \
-node ledger.js miner-deposit miner1 fred 120 http://localhost:5003/ && \
+node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
 node ledger.js miner-deposit miner3 olga 110 http://localhost:5003/ && \
 node ledger.js miner-deposit miner3 evan 250 http://localhost:5003/ 
 
-# Try overloading it
-node ledger.js transaction fil fred 1.369 transfer http://localhost:5003 && \
-node ledger.js transaction fred fil 2.369 transfer http://localhost:5003 && \
-node ledger.js miner-deposit miner1 fil 200 http://localhost:5003 && \
+node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
+node ledger.js transaction fred fil 2.369 transfer http://localhost:5001 && \
+node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
 node ledger.js transaction fil olga 2.369 transfer http://localhost:5003 && \
+node ledger.js transaction olga fred 1.369 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner3 olga 210 http://localhost:5003 && \
-node ledger.js miner-deposit miner1 evan 205 http://localhost:5003 && \
-node ledger.js transaction fil fred 1.369 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner1 evan 205 http://localhost:5001 && \
 node ledger.js transaction fil olga 6 transfer http://localhost:5003 && \
-node ledger.js transaction evan olga 1.369 transfer http://localhost:5003
+node ledger.js transaction evan olga 1.369 transfer http://localhost:5001

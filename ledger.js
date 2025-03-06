@@ -9,8 +9,10 @@ function ledgerInfo(){
     console.log( `- node ledger.js check {walletname}`)
     console.log( `- node ledger.js create {walletname} [miner-server-api-url]` )
     console.log( `- node ledger.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
-    console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url}` )
+    console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
     console.log( `- node ledger.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
+    console.log( `- node ledger.js examine {hash} {miner-server-api-url}` )
+    
 }
 
 if( process.argv.length<3 ){
@@ -31,6 +33,7 @@ async function main(){
     const param3 = process.argv[5] || ''
     const param4 = process.argv[6] || ''
     const param5 = process.argv[7] || ''
+    const param6 = process.argv[8] || ''
     if( method !== 'wallets' && !name ) console.log( `Please re-run with a walletname, ex. node ledger.js create joesmith`)
     
     switch( method ){
@@ -83,13 +86,13 @@ async function main(){
             }
 
             // arrange alphabettically and display
-            debug('dim',`   = Name =${' '.repeat(14)} = TX Balance =${' '.repeat(4)} = Block Balance =`)
+            debug('dim',`   = Name =${' '.repeat(14)} = TX Balance =${' '.repeat(11)} = Block Balance =`)
             wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
                 if( !(name.length===0 && name === '_') && i.tx.balance>0 ){
                     let seqInfo = i.tx?.seq > 0 || i.onChain?.seq > 0 ? `${i.tx.seq},${i.onChain.seq}` : ''
                     seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
-                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.tx.balance || '0'} ${' '.repeat(15-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} ${' '.repeat(20-i.tx.balance.toString().length)} ${i.note || ''}`)
+                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.tx.balance || '0'} ${' '.repeat(22-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} ${' '.repeat(20-(i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance).toString().length)} ${i.note || ''}`)
                 }
                 })
             break
@@ -161,7 +164,14 @@ async function main(){
 
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
             const { fee, seq }= response.result[0]
-            const signedTransaction = ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1})
+            let note = param6
+            if( note && note.startsWith('*') ){ // encrypt note for recipient only
+                const srcWallet = ledger.getWallet(src)
+                note = '*' + ledger.walletSign(srcWallet.privateKey, note)
+                debug('dim',`! encrypted note: ${note}`)
+            }
+            const signedTransaction = note ? ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1, note})
+                                           : ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1})
             if( signedTransaction.error ){
                 console.log( `  x unable to create signed transaction`)
                 return
@@ -222,7 +232,7 @@ async function main(){
             break
             }
 
-        case 'transaction-verify': // merkle tree proof returned, thus proving the node has the transaction
+        case 'transaction-verify': {// merkle tree proof returned, thus proving the node has the transaction
             const hash = param1 // may be multiple hashes comma separated
             hostname = param2
             response = await urlCall({ hostname, path: `/transactions/verify?hash=${hash}` })
@@ -239,7 +249,32 @@ async function main(){
                 }
             })
             break
+            }
 
+        case 'examine': {// merkle tree proof returned, thus proving the node has the transaction
+            const hash = param1 // may be multiple hashes comma separated
+            hostname = param2
+            response = await urlCall({ hostname, path: `/transactions?hash=${hash}` })
+            if( response.error || !response.result ){
+                console.log( `  x invalid hash - aborting:`, response )
+                return
+            }
+            
+            for( const transaction of response.result ){
+                const {src, dest, amount, fee, seq, hash, note, meta, ...data} = transaction   
+                debug('green',`Block#${meta.blockIdx} / ${hash.substring(0,10)} :  Transaction ${src.split(':')[0]}/${seq} -> ${dest.split(':')[0]}  $${amount} (fee: $${fee})` )
+                if( note.startsWith('*') ){
+                    const srcWallet = ledger.getWallet(src)
+                    const signedNote = note.slice(1) // remove leading *
+                    const textNote = ledger.walletDecode(srcWallet.publicKey, signedNote).slice(1)
+                    debug('cyan',`                         ~ private (only viewable by ${dest.split(':')[0]}) note: "${textNote}"`)
+                } else if( note ){
+                    debug('cyan',`                         ~ public note: ${note}`)
+                }
+            }
+            // console.log( `- node ledger.js transaction-examine {hash} {miner-server-api-url}` )
+            break
+            }
         default:
             ledgerInfo()
             break
