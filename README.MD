@@ -143,7 +143,7 @@ node ledger.js miner-deposit miner3 jane 214 http://localhost:5001 && \
 node ledger.js miner-deposit miner1 rob 205 http://localhost:5001 && \
 node ledger.js transaction fil fred 5 transfer http://localhost:5000 && \
 node ledger.js transaction fil jane 6 transfer http://localhost:5001 && \
-node ledger.js transaction rob jane 7 transfer http://localhost:5003 "hello love"
+node ledger.js transaction rob jane 7 transfer http://localhost:5003 "hello friend"
 ```
 
 ### Check balances match across servers after transactions
@@ -171,7 +171,7 @@ node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
 node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
 node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ 
 
-node ledger.js transaction fil fred 2 transfer http://localhost:5000 && \
+node ledger.js transaction fil fred 2.4 transfer http://localhost:5000 && \
 node ledger.js transaction fred fil 3 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
 node ledger.js transaction fil jane 4 transfer http://localhost:5003 && \
@@ -184,6 +184,7 @@ node ledger.js transaction rob jane 3.5 transfer http://localhost:5001
 node ledger.js transaction fil jane 6 transfer http://localhost:5004 && \
 node ledger.js transaction rob jane 3.5 transfer http://localhost:5004
 
+node ledger.js transaction fil fred 2.4 transfer http://localhost:5000 && \
 node ledger.js miner-deposit miner0 smith2 250 http://localhost:5000/ && \
 node ledger.js transaction smith2 jane 3.5 transfer http://localhost:5000
 ```
