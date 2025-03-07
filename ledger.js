@@ -109,19 +109,22 @@ async function main(){
         case 'create': {
             const url = param2
 
-            const newWallet = ledger.createWallet(name)
-            if( newWallet.error ) return newWallet
+            // we assume a ':' in name means they are just adding an address with public key in it
+            const userWallet = name.indexOf(':') === -1 ? ledger.createWallet(name) : ledger.updateWallet(name)
+            if( userWallet.error ){
+                debug('red', userWallet.error)
+                break
+            }
             
-            console.log( `   > Created! publicKey(${newWallet.publicKey})` )
+            console.log( `\n> ${name.indexOf(':') === -1 ? 'Created' : 'Added'}! *${userWallet.name}* with publicKey(${userWallet.publicKey})` )
 
             if( !url || url.length<10 ) return
 
             console.log( `- pushing to url(${url})`)
             // broadcast to a miner: don't share privateKey (obviously)!
-            let walletData = newWallet
-            delete walletData.privateKey
-            delete walletData.balance
-            response = await urlCall({ hostname: url, path: '/wallet_sync', body: [ walletData ] })
+            delete userWallet.privateKey
+            delete userWallet.balance
+            response = await urlCall({ hostname: url, path: '/wallet_sync', body: [ userWallet ] })
             if( response.error ) return response
 
             console.log(`- synced to server:` )

@@ -146,7 +146,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .post('/blocks/announce', handlePOST(async (blocks,head) => {
             debug( 'cyan', `>> [${head.nodeToken}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
 
-            miner.nodeState = 'LOADING'
+            miner.stateOffline('ADD_CHAIN')
             // prevent attempting to write it till we know if this announced block added
             if( miner.worker.status === 'MINING' ){
                 debug( 'yellow', `   \_ pausing our mining`)
@@ -176,12 +176,18 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                     })
                 } else {
                     debug( 'red', `    ! addBlockchain will skip block #${block.index}, expecting next block to be ${blockMaxIndex-1}. No problem: we will re-sync chain later.`)
+                    if( block.index > blockMaxIndex ){
+                        // bigger so lets' request update from them.
+                        debug('dim', ` .. getting peer blocks from ${head.hostname} as they have more than us!`)
+                        const syncResult = miner.syncPeerBlocks(head.hostname)
+                        if( syncResult.error ) debug( 'red', syncResult.error )
+                    }
                 }
             })
             const addResult = miner.blockchain.addBlockchain(blocks)
             if( addResult.error ){
                 miner.worker.status = miner.worker.status.replace('_PAUSE','') // ex. 'MINING_PAUSE|SOLVE_PAUSE => MINING|SOLVE
-                miner.nodeState = 'ONLINE'
+                miner.stateOnline()
                 return addResult
             }
 
@@ -189,7 +195,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             const { addBlockCnt, hashes, transactionCnt, resetLedger }= addResult
             if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Pending are ignored.`)
             miner.transactionManager.deletePending({ hashes })
-            miner.nodeState = 'ONLINE'
+            miner.stateOnline()
 
             // if we are mining same block, cancel our block (we could leave it to finish, 
             // then discover block already exists, but wasted CPU)
@@ -235,7 +241,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             response.result.forEach( (t,idx) => {
                 // show transaction attempted
                 const { src, dest, seq, amount, hash, meta }= transactions[idx]
-                debug( 'cyan', `>> [${head.nodeToken||'API'}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta)}`)
+                debug( 'cyan', `>> [${head.nodeToken||'API'}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta) || ''}`)
 
                 // show result if error, else just broadcast it to peers
                 const { error, fee, seq: postSeq, hash: postHash, balance }= t
@@ -290,7 +296,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .listen(host, port, (token) => {
             if (token) {
                 // port = uWS.us_socket_local_port(token)
-                debug('green', `Miner running on ${host}:${port} ${miner.nodeState}`)
+                debug('green', `Miner running on ${host}:${port}; Miner discovering peers (${miner.nodeState})
+                    `)
             } else {
                 debug('red', 'Failed finding available port')
                 process.exit(-1)
