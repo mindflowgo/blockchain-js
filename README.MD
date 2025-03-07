@@ -29,7 +29,7 @@ ORDER BY type='minerDeposit' || type='mintIssue' DESC, txSig <> '' DESC, timesta
 
 ## RUNNING A NODE
 ```bash
-node server.js debug miner1 5000
+node server.js debug miner0 5000
 ```
 (will listen on localhost:5000)
 
@@ -58,7 +58,7 @@ node ledger.js miner-deposit miner0 fil 500 http://localhost:5000/
 
 Now you have a user with money on their blockchain. You can have them send to other users:
 
-Create a new user:
+### Create a New User
 ```bash
 node ledger.js create fred
 ```
@@ -92,54 +92,71 @@ node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://lo
 ### See Pending Transactions
 Mining servers will hold open transactions that aren't yet on the blockchain, that you can see. In BTC they are in whats called 'mempool', and 
 aren't confirmed till written to blocks.
-curl http://localhost:5003/transactions/pending
 
+```bash
+curl http://localhost:5003/transactions/pending
+```
 
 ### TESTING ###
-# Run a few servers - 5002 does not exist, miner0 learns about other miners
+#### Run a few servers - 5002 does not exist, miner0 learns about other miners
+```bash
 node server.js debug miner0 5000 && \
 node server.js debug miner1 5001 http://localhost:5000,http://localhost:5002 && \
 node server.js debug miner3 5003 http://localhost:5000,http://localhost:5003
+```
 
-# Increase mint
+### Increase mint
+```bash
 curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]' http://localhost:5000/transactions
+```
 
-# AirDrop to the miners
+### AirDrop to the miners
+```bash
 curl --data '[{"src":"_mint","dest":"miner0","amount":"100000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
 curl --data '[{"src":"_mint","dest":"miner1","amount":"100000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
 curl --data '[{"src":"_mint","dest":"miner3","amount":"100000","type":"mintAirDrop"}]' http://localhost:5003/transactions
+```
 
-# Create local accounts
+### Create local accounts
+```bash
 node ledger.js create fil
 node ledger.js create fred
-node ledger.js create olga
-node ledger.js create evan
+node ledger.js create jane
+node ledger.js create rob
+```
 
-# Deposit money into accounts of users
+### Deposit money into accounts of users
+```bash
 node ledger.js miner-deposit miner0 fil 100 http://localhost:5000/ && \
 node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
-node ledger.js miner-deposit miner3 olga 110 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 evan 250 http://localhost:5003/ 
+node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
+node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ 
+```
 
-# Try overloading it
-node ledger.js transaction fil fred 1.369 transfer http://localhost:5001 && \
-node ledger.js transaction fred fil 2.369 transfer http://localhost:5003 && \
-node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
-node ledger.js transaction fil olga 2.369 transfer http://localhost:5003 && \
-node ledger.js miner-deposit miner3 olga 210 http://localhost:5001 && \
-node ledger.js miner-deposit miner1 evan 205 http://localhost:5001 && \
-node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
-node ledger.js transaction fil olga 6 transfer http://localhost:5001 && \
-node ledger.js transaction evan olga 1.369 transfer http://localhost:5003 "hello love"
+### Try overloading it
+```bash
+node ledger.js transaction fil fred 2 transfer http://localhost:5001 && \
+node ledger.js transaction fred fil 3 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner1 fil 201 http://localhost:5001 && \
+node ledger.js transaction fil jane 4 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner3 jane 214 http://localhost:5001 && \
+node ledger.js miner-deposit miner1 rob 205 http://localhost:5001 && \
+node ledger.js transaction fil fred 5 transfer http://localhost:5000 && \
+node ledger.js transaction fil jane 6 transfer http://localhost:5001 && \
+node ledger.js transaction rob jane 7 transfer http://localhost:5003 "hello love"
+```
 
-# Check balances match across servers after transactions
-node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003
+### Check balances match across servers after transactions
+```bash
+node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003,http://localhost:5004
+```
 
-# Transactions Notes
+### Transactions Notes
 You can add a public or private note to transactions:
 ```bash
 node ledger.js transaction fred jane 100 transfer http://localhost:5001 "*Thanks for the awesome phone :)"
 ```
+
 If it starts with a '*', the note will be encrypted so that ONLY the destination person will be able to see it (it's encrypted for everyone else); if no *, 
 then the note will be publically viewable.
 
@@ -147,18 +164,26 @@ then the note will be publically viewable.
 If you're interested in helping build out this project or the UI for it, get in touch. 
 
 
-# Try Stress-Testing 3 Nodes
+### Try Stress-Testing 3 Nodes
+```bash
 node ledger.js miner-deposit miner0 fil 100 http://localhost:5003/ && \
 node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
-node ledger.js miner-deposit miner3 olga 110 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 evan 250 http://localhost:5003/ 
+node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
+node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ 
 
-node ledger.js transaction fil fred 1.369 transfer http://localhost:5000 && \
-node ledger.js transaction fred fil 2.369 transfer http://localhost:5001 && \
+node ledger.js transaction fil fred 2 transfer http://localhost:5000 && \
+node ledger.js transaction fred fil 3 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
-node ledger.js transaction fil olga 2.369 transfer http://localhost:5003 && \
-node ledger.js transaction olga fred 1.369 transfer http://localhost:5001 && \
-node ledger.js miner-deposit miner3 olga 210 http://localhost:5003 && \
-node ledger.js miner-deposit miner1 evan 205 http://localhost:5001 && \
-node ledger.js transaction fil olga 6 transfer http://localhost:5003 && \
-node ledger.js transaction evan olga 1.369 transfer http://localhost:5001
+node ledger.js transaction fil jane 4 transfer http://localhost:5003 && \
+node ledger.js transaction jane fred 5 transfer http://localhost:5001 && \
+node ledger.js miner-deposit miner3 jane 210 http://localhost:5003 && \
+node ledger.js miner-deposit miner1 rob 205 http://localhost:5001 && \
+node ledger.js transaction fil jane 6 transfer http://localhost:5003 && \
+node ledger.js transaction rob jane 3.5 transfer http://localhost:5001
+
+node ledger.js transaction fil jane 6 transfer http://localhost:5004 && \
+node ledger.js transaction rob jane 3.5 transfer http://localhost:5004
+
+node ledger.js miner-deposit miner0 smith2 250 http://localhost:5000/ && \
+node ledger.js transaction smith2 jane 3.5 transfer http://localhost:5000
+```
