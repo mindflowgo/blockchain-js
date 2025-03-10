@@ -93,7 +93,7 @@ async function main(){
                     let seqInfo = i.tx?.seq > 0 || i.onChain?.seq > 0 ? `${i.tx.seq},${i.onChain.seq}` : ''
                     seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
                     debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.tx.balance || '0'} `
-                              + `${' '.repeat(18-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} ${' '.repeat(20-(i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance).toString().length)} ${i.note || ''}`
+                              + `${' '.repeat(22-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} ${' '.repeat(20-(i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance).toString().length)} ${i.note || ''}`
                               + `${' '.repeat(3-i.depth.toString().length)}${i.depth}`)
                 }
                 })

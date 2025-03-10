@@ -234,6 +234,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }, miner.nodeState))
 
         .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
+            // came through us, stake ownership in them
+            transactions.forEach( t => {
+                if( !t.meta ) t.meta = {}
+                if( !t.meta.txStake ) t.meta.txStake = `${miner.nodeName}:${time()}`
+            })
+            
             const response = miner.transactionManager.newBatch(transactions)
             // let result = []
             if( response.error ) return response
