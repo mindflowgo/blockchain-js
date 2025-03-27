@@ -156,6 +156,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // our chain is off (or theirs), we simply ignore the block announcement -- we re-sync chains in 
             // heartbeat process
             let blockMaxIndex = miner.blockchain.height()
+            let blockIdxSequenceOk = true
             blocks.forEach( block => {
                 // only accept announcement blocks that are chronological to our blockchain height
                 debug( 'cyan', `  ~ processing incoming block #${block.index} (our height()=${miner.blockchain.height()})` )
@@ -175,6 +176,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                         }
                     })
                 } else {
+                    blockIdxSequenceOk = false
                     debug( 'red', `    ! addBlockchain will skip block #${block.index}, expecting next block to be ${blockMaxIndex-1}. No problem: we will re-sync chain later.`)
                     if( block.index > blockMaxIndex ){
                         // bigger so lets' request update from them.
@@ -184,17 +186,22 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                     }
                 }
             })
-            const addResult = miner.blockchain.addBlockchain(blocks)
-            if( addResult.error ){
-                miner.worker.status = miner.worker.status.replace('_PAUSE','') // ex. 'MINING_PAUSE|SOLVE_PAUSE => MINING|SOLVE
-                miner.stateOnline()
-                return addResult
-            }
 
-            // remove any that were lingering in the pendingTransactions; go online again
-            const { addBlockCnt, hashes, transactionCnt, resetLedger }= addResult
-            if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Pending are ignored.`)
-            miner.transactionManager.deletePending({ hashes })
+            // only bother trying to add block if next in sequence
+            let addResult = {}
+            if( blockIdxSequenceOk ){
+                addResult = miner.blockchain.addBlockchain(blocks)
+                if( addResult.error ){
+                    miner.worker.status = miner.worker.status.replace('_PAUSE','') // ex. 'MINING_PAUSE|SOLVE_PAUSE => MINING|SOLVE
+                    miner.stateOnline()
+                    return addResult
+                }
+
+                // remove any that were lingering in the pendingTransactions; go online again
+                const { hashes, resetLedger }= addResult
+                if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Pending are ignored.`)
+                miner.transactionManager.deletePending({ hashes })
+            }
             miner.stateOnline()
 
             // if we are mining same block, cancel our block (we could leave it to finish, 
@@ -207,6 +214,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 // await waitReady(miner, 'worker', 'status', 'READY')
             }
 
+            const { addBlockCnt, transactionCnt }= addResult
             return { addBlockCnt, transactionCnt }
             }, miner.nodeState))
 

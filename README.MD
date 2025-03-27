@@ -114,7 +114,8 @@ curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]'
 ```bash
 curl --data '[{"src":"_mint","dest":"miner0","amount":"100000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
 curl --data '[{"src":"_mint","dest":"miner1","amount":"100000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
-curl --data '[{"src":"_mint","dest":"miner3","amount":"100000","type":"mintAirDrop"}]' http://localhost:5003/transactions
+curl --data '[{"src":"_mint","dest":"miner3","amount":"100000","type":"mintAirDrop"}]' http://localhost:5003/transactions && \
+curl --data '[{"src":"_mint","dest":"miner4","amount":"100000","type":"mintAirDrop"}]' http://localhost:5004/transactions
 ```
 
 ### Create local accounts
@@ -130,7 +131,7 @@ node ledger.js create rob
 node ledger.js miner-deposit miner0 fil 100 http://localhost:5000/ && \
 node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
 node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ 
+node ledger.js miner-deposit miner4 rob 250 http://localhost:5004/ 
 ```
 
 ### Try overloading it
@@ -166,11 +167,12 @@ If you're interested in helping build out this project or the UI for it, get in 
 
 ### Try Stress-Testing 3 Nodes
 ```bash
+curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
 node ledger.js miner-deposit miner0 fil 100 http://localhost:5003/ && \
 node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
 node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ 
-
+node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ && \
+node ledger.js miner-deposit miner3 smith 250 http://localhost:5000/ && \
 node ledger.js transaction fil fred 2.4 transfer http://localhost:5000 && \
 node ledger.js transaction fred fil 3 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
@@ -179,12 +181,20 @@ node ledger.js transaction jane fred 5 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner3 jane 210 http://localhost:5003 && \
 node ledger.js miner-deposit miner1 rob 205 http://localhost:5001 && \
 node ledger.js transaction fil jane 6 transfer http://localhost:5003 && \
-node ledger.js transaction rob jane 3.5 transfer http://localhost:5001
-
+node ledger.js transaction rob jane 3.5 transfer http://localhost:5001 && \
 node ledger.js transaction fil jane 6 transfer http://localhost:5004 && \
-node ledger.js transaction rob jane 3.5 transfer http://localhost:5004
-
+node ledger.js transaction rob jane 3.5 transfer http://localhost:5004 && \
 node ledger.js transaction fil fred 2.4 transfer http://localhost:5000 && \
+node ledger.js transaction fil fred 2 transfer http://localhost:5001 && \
+node ledger.js transaction fred fil 3 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner1 fil 201 http://localhost:5001 && \
+node ledger.js transaction fil jane 4 transfer http://localhost:5003 && \
+node ledger.js miner-deposit miner3 jane 214 http://localhost:5001 && \
+node ledger.js miner-deposit miner1 rob 205 http://localhost:5001 && \
+node ledger.js transaction fil fred 5 transfer http://localhost:5000 && \
+node ledger.js transaction fil jane 6 transfer http://localhost:5001 && \
+node ledger.js transaction rob jane 7 transfer http://localhost:5003 "hello friend"
+
 node ledger.js miner-deposit miner0 smith2 250 http://localhost:5000/ && \
 node ledger.js transaction smith2 jane 3.5 transfer http://localhost:5000
 ```
