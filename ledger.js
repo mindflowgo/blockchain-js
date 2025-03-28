@@ -193,10 +193,13 @@ async function main(){
                 return
             }
             const result = response.result[0]
-            if( result.error )
+            if( result.error ){
                 console.log( ` * mining server REJECTED transaction: ${result.error}` )
-            else
+            } else {
+                if( result.meta.warning ) debug('cyan', ` ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
+
                 console.log( ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
+            }
             break
             }
 

@@ -167,8 +167,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                         const matchTransaction = miner.transactionManager.pending.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
                         if( conflictTransaction.length > 0 ){
                             debug( 'red', `  ! announced transaction (${t.src.split(':')[0]}/${t.seq}) CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
-                            if( conflictTransaction[0].meta.txStake.indexOf(' MINING:')>0 )
-                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.txStake}`)
+                            if( conflictTransaction[0].meta.miner.indexOf(' MINING:')>0 )
+                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.miner}`)
                                 
                             // miner.transactionReverse(conflictTransaction[0], { clearPending: true }) // don't bother revesing, it will stale-out
                         } else if( matchTransaction.length > 0 ){
@@ -207,7 +207,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // if we are mining same block, cancel our block (we could leave it to finish, 
             // then discover block already exists, but wasted CPU)
             if( (miner.worker.status.indexOf('_PAUSE') > -1 ) ){
-                debug( 'yellow', `**CRAP** Incoming mined-block SAME index #${blocks[0].index} as ours (our completion state: ${miner.worker.status}), `
+                debug( 'yellow', `**MINING-STOP** Incoming mined-block SAME index #${blocks[0].index} as ours (our completion state: ${miner.worker.status}), `
                             +`aborting/cleaning-up our mining effort; reversing transactions.` )
                 miner.worker.node.postMessage({action: 'ABORT' })
                 // // wait for worker to reverse the block, transactions, etc.
@@ -235,17 +235,20 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 } else {
                     // broadcast it onward to peers if it was valid, and we killed it.
                     // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
-                    debug( 'blue', `- Expired transaction ${t.src.split(':')[0]}/${t.seq} > ${t.dest.split(':')[0]} $${t.amount}, txStake(${t.txStake}) and relaying onward it's gone.)` )
+                    debug( 'blue', `- Expired transaction ${t.src.split(':')[0]}/${t.seq} > ${t.dest.split(':')[0]} $${t.amount}, miner(${t.miner}) and relaying onward it's gone.)` )
                 }
                 })
                 return { result }
             }, miner.nodeState))
 
         .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
-            // came through us, stake ownership in them
+            // came through us, stake ownership in minting them
             transactions.forEach( t => {
                 if( !t.meta ) t.meta = {}
-                if( !t.meta.txStake ) t.meta.txStake = `${miner.nodeName}:${time()}`
+                if( !t.meta.miner ){
+                    t.meta.miner = miner.nodeName
+                    t.meta.minerStart = time()
+                }
             })
             
             const response = miner.transactionManager.newBatch(transactions)
@@ -259,11 +262,12 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
                 // show result if error, else just broadcast it to peers
                 const { error, fee, seq: postSeq, hash: postHash, balance }= t
-                if( error ) 
+                if( error ) {
                     debug('red',`   x Rejected: ${error}`)
-                else
+                } else { 
                     // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
                     miner.broadcastPeers({ path: '/transactions/announce', data: [t] })
+                }
             })
 
             // console.log( `[transaction] result:`, result )
