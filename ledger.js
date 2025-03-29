@@ -148,24 +148,24 @@ async function main(){
             const url = param5
 
             if( !['escrow','transfer'].includes(type) ){
-                console.log( `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
+                debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
             }
             // console.log( ` amount(${amount}) type(${type}) url(${url})`)
             if( !dest || amount <= 0 || !url ){
-                console.log( `A valid dest (${dest}) and positive amount (${amount}) is needed, type(${type}), server (${url}) too; try again.` )
+                debug( 'red', `A valid dest (${dest}) and positive amount (${amount}) is needed, type(${type}), server (${url}) too; try again.` )
                 return
             }
 
             // let's get the fee for transaction & seq
             const src = ledger.buildTransactionName(name)
             if( src.error ){
-                console.log( src.error )
+                debug( 'red', src.error )
                 return
             }
             response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
             if( response.error || !response.result ){
-                console.log( `  x invalid transaction prepare request, aborting:`, response )
+                debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
 
@@ -186,19 +186,19 @@ async function main(){
             }
 
             // post the signed transaction
-            console.log( ` - Queried for fee (fee=$${fee}) on $${signedTransaction.amount}; prepared (sequence=${seq+1}) & signed transaction (timestamp=${signedTransaction.timestamp}; txSig=${signedTransaction.txSig.substring(0,10)}...${signedTransaction.txSig.length})` )
+            debug( 'dim', ` - Queried for fee (fee=$${fee}) on $${signedTransaction.amount}; prepared (sequence=${seq+1}) & signed transaction (timestamp=${signedTransaction.timestamp}; txSig=${signedTransaction.txSig.substring(0,10)}...${signedTransaction.txSig.length})` )
             response = await urlCall({ hostname: url, path: '/transactions', body: [ signedTransaction ] })
             if( response.error ){
-                console.log( `   x mining server (${url}) rejected it: ${response.error}`)
+                debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
                 return
             }
             const result = response.result[0]
             if( result.error ){
-                console.log( ` * mining server REJECTED transaction: ${result.error}` )
+                debug( 'red', ` * mining server REJECTED transaction: ${result.error}` )
             } else {
                 if( result.meta.warning ) debug('cyan', ` ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
 
-                console.log( ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
+                debug( 'dim', ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
             }
             break
             }
@@ -223,7 +223,7 @@ async function main(){
             // let's get the fee for transaction & seq
             response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
             if( response.error || !response.result ){
-                console.log( `  x invalid transaction prepare request, aborting:`, response )
+                debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
@@ -232,14 +232,14 @@ async function main(){
             const minerTransaction = {src, dest, amount, fee, type: 'minerDeposit', seq: seq+1}
             response = await urlCall({ hostname: url, path: '/transactions', body: [ minerTransaction ] })
             if( response.error ){
-                console.log( `   x mining server (${url}) rejected it: ${response.error}`)
+                debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
                 return
             }
             const result = response.result[0]
             if( result.error )
-                console.log( ` * mining server REJECTED transaction: ${result.error}` )
+                debug( 'red', ` * mining server REJECTED transaction: ${result.error}` )
             else
-                console.log( ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
+                debug( 'green', ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
             break
             }
 
