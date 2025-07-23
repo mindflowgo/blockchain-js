@@ -166,13 +166,13 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                         const conflictTransaction = miner.transactionManager.pending.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
                         const matchTransaction = miner.transactionManager.pending.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
                         if( conflictTransaction.length > 0 ){
-                            debug( 'red', `  ! announced transaction (${t.src.split(':')[0]}/${t.seq}) CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
+                            debug( 'red', `  ! announced transaction [${t.src.split(':')[0]}/${t.seq} -> ${t.dest.split(':')[0]} $${t.amount}] CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
                             if( conflictTransaction[0].meta.miner.indexOf(' MINING:')>0 )
                                 debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.miner}`)
                                 
                             // miner.transactionReverse(conflictTransaction[0], { clearPending: true }) // don't bother revesing, it will stale-out
                         } else if( matchTransaction.length > 0 ){
-                            debug( 'dim', ` .. incoming block #${block.index} transaction matches a pending transaction we have (good)` )
+                            debug( 'dim', ` .. incoming block #${block.index} [${t.src.split(':')[0]}/${t.seq} -> ${t.dest.split(':')[0]} $${t.amount}] matches a pending we have (good)` )
                         }
                     })
                 } else {
@@ -227,7 +227,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .post('/transactions/expired', handlePOST(async (transactions,head) => {
             let result = []
             transactions.forEach( t => {
-                debug( `>> [${head.nodeToken}]${head.url} (${t.src.split(':')[0] || t.src}/${t.seq}) -> (${t.dest.split(':')[0] || t.dest}) amount(${t.amount}):` )
+                debug( `>> [${head.nodeToken}]${head.url} [${t.src.split(':')[0] || t.src}/${t.seq} -> ${t.dest.split(':')[0] || t.dest} $${t.amount}]:` )
                 const transResult = miner.transactionManager.transactionReverse( t, { clearPending:true })
                 result.push( transResult )
                 if( transResult.error ){
@@ -235,7 +235,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
                 } else {
                     // broadcast it onward to peers if it was valid, and we killed it.
                     // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
-                    debug( 'blue', `- Expired transaction ${t.src.split(':')[0]}/${t.seq} > ${t.dest.split(':')[0]} $${t.amount}, miner(${t.miner}) and relaying onward it's gone.)` )
+                    debug( 'blue', `- Expired transaction [${t.src.split(':')[0]}/${t.seq} > ${t.dest.split(':')[0]} $${t.amount}], miner(${t.miner}) and relaying onward it's gone.)` )
                 }
                 })
                 return { result }

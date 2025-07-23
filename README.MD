@@ -167,12 +167,128 @@ If you're interested in helping build out this project or the UI for it, get in 
 
 ### Try Stress-Testing 3 Nodes
 ```bash
+# miner 0,1 online only, fresh
 curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
-node ledger.js miner-deposit miner0 fil 100 http://localhost:5003/ && \
-node ledger.js miner-deposit miner1 fred 120 http://localhost:5001/ && \
-node ledger.js miner-deposit miner3 jane 110 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 rob 250 http://localhost:5003/ && \
-node ledger.js miner-deposit miner3 smith 250 http://localhost:5000/ && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+
+# miner 0
+curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
+node ledger.js miner-deposit miner0 fil 50 http://localhost:5000/ && \
+
+node ledger.js transaction fil fred 2 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1.5 transfer http://localhost:5000 && \
+node ledger.js transaction jane fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 2 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1.5 transfer http://localhost:5000 && \
+node ledger.js transaction jane fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 2 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1.5 transfer http://localhost:5000 && \
+node ledger.js transaction jane fil 1 transfer http://localhost:5000 
+
+# miner 1
+curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+node ledger.js miner-deposit miner1 rob 50 http://localhost:5001/ && \
+
+node ledger.js transaction rob smith2 2 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 rob 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction rob smith2 2 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 rob 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction rob smith2 2 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 rob 1 transfer http://localhost:5001
+
+
+
+node ledger.js miner-deposit miner1 fil 50 http://localhost:5001/ && \
+node ledger.js miner-deposit miner1 fred 50 http://localhost:5001/ && \
+node ledger.js miner-deposit miner0 jane 50 http://localhost:5000/ && \
+node ledger.js miner-deposit miner0 rob 50 http://localhost:5000/ && \
+node ledger.js miner-deposit miner1 smith 50 http://localhost:5001/ && \
+node ledger.js miner-deposit miner1 smith2 50 http://localhost:5001/ && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5000 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5001 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5000 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5000 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5001 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5000 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+# server-independent
+node ledger.js transaction fil fred 1 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5000 && \
+node ledger.js transaction jane fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction rob smith2 1 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 rob 1 transfer http://localhost:5001 
+
+
+
+
+# miner 0,3 put online, given 30 seconds to sync, then run
+node ledger.js transaction fil fred 1 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5004 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith 1 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5000 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5000 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5004 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5004 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5001 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5003 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5004 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5000 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5004 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith 1 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5000 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5000 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5004 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5004 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5001 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5003 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5001 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5004 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5003 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5000 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5001
+# after 10 mins, check all sync'd:
+node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003,http://localhost:5004
+
+
+
+
+node ledger.js transaction fred fil 3 transfer http://localhost:5001 && \
+
+
 node ledger.js transaction fil fred 2.4 transfer http://localhost:5000 && \
 node ledger.js transaction fred fil 3 transfer http://localhost:5001 && \
 node ledger.js miner-deposit miner1 fil 200 http://localhost:5001 && \
@@ -197,4 +313,21 @@ node ledger.js transaction rob jane 7 transfer http://localhost:5003 "hello frie
 
 node ledger.js miner-deposit miner0 smith2 250 http://localhost:5000/ && \
 node ledger.js transaction smith2 jane 3.5 transfer http://localhost:5000
+
+# miner 3,4 offline
+node ledger.js transaction fred jane 1 transfer http://localhost:5001 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5000 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5001 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5001 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5001 && \
+node ledger.js transaction smith2 fil 1 transfer http://localhost:5000 && \
+
+node ledger.js transaction fil fred 1 transfer http://localhost:5000 && \
+node ledger.js transaction fred jane 1 transfer http://localhost:5001 && \
+node ledger.js transaction jane rob 1 transfer http://localhost:5001 && \
+node ledger.js transaction rob smith2 1 transfer http://localhost:5001 &
 ```

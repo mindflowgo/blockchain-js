@@ -181,12 +181,12 @@ async function main(){
             const signedTransaction = note ? ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1, note})
                                            : ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1})
             if( signedTransaction.error ){
-                console.log( `  x unable to create signed transaction`)
+                console.log( `  ! unable to create signed transaction`)
                 return
             }
 
             // post the signed transaction
-            debug( 'dim', ` - Queried for fee (fee=$${fee}) on $${signedTransaction.amount}; prepared (sequence=${seq+1}) & signed transaction (timestamp=${signedTransaction.timestamp}; txSig=${signedTransaction.txSig.substring(0,10)}...${signedTransaction.txSig.length})` )
+            debug( 'dim', ` - Queried server for fee/seq: [${src.split(':')[0]}/${seq+1} -> ${dest.split(':')[0]} $${signedTransaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
             response = await urlCall({ hostname: url, path: '/transactions', body: [ signedTransaction ] })
             if( response.error ){
                 debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
@@ -194,12 +194,13 @@ async function main(){
             }
             const result = response.result[0]
             if( result.error ){
-                debug( 'red', ` * mining server REJECTED transaction: ${result.error}` )
+                debug( 'red', `   x mining server REJECTED transaction: ${result.error}` )
             } else {
-                if( result.meta.warning ) debug('cyan', ` ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
+                if( result.meta.warning ) debug('cyan', `   ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
 
-                debug( 'dim', ` * mining server accepted. Seq: ${result.seq}, Fee: $${result.fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
+                debug( 'green', `   \ mining server accepted - transaction hash: ${result.hash}, expected balance: $${result.meta.balance}` ) // Seq: ${result.seq}, Fee: $${result.fee},
             }
+            debug( 'dim', ` `)
             break
             }
 
