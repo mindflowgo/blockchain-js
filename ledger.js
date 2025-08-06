@@ -1,22 +1,24 @@
-import Ledger from './lib/Ledger.js'
-import { urlCall, sha256Hash, fixRounding, time, debug } from './lib/helper.js'
+import Wallet from './lib/Wallet.js'
+import TransactionHandler from './lib/TransactionHandler.js'
+
+import { urlCall, fixRounding, time, debug } from './lib/helper.js'
 
 // Terminal functionality - this only runs when the file is run directly from terminal (so it's dual-use)
 
-function ledgerInfo(){
-    console.log( `LEDGER options:`)
-    console.log( `- node ledger.js wallets {wallet1}[,wallet2,...] [miner-server-api-url]` )
-    console.log( `- node ledger.js check {walletname}`)
-    console.log( `- node ledger.js create {walletname} [miner-server-api-url]` )
-    console.log( `- node ledger.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
-    console.log( `- node ledger.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
-    console.log( `- node ledger.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
-    console.log( `- node ledger.js examine {hash} {miner-server-api-url}` )
+function walletInfo(){
+    console.log( `wallet options:`)
+    console.log( `- node wallet.js addresses {wallet1}[,wallet2,...] [miner-server-api-url]` )
+    console.log( `- node wallet.js check {walletname}`)
+    console.log( `- node wallet.js create {walletname} [miner-server-api-url]` )
+    console.log( `- node wallet.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
+    console.log( `- node wallet.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
+    console.log( `- node wallet.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
+    console.log( `- node wallet.js examine {hash} {miner-server-api-url}` )
     
 }
 
 if( process.argv.length<3 ){
-    ledgerInfo()
+    walletInfo()
     process.exit()
 }
 
@@ -25,7 +27,6 @@ async function main(){
     let hostname = 'http://localhost:5000'
     let url = ''
     // default path for the user wallet
-    const ledger = new Ledger('./data/wallet.json')
     const method = process.argv[2]
     const param1 = process.argv[3] || ''
     const name = param1
@@ -34,25 +35,25 @@ async function main(){
     const param4 = process.argv[6] || ''
     const param5 = process.argv[7] || ''
     const param6 = process.argv[8] || ''
-    if( method !== 'wallets' && !name ) console.log( `Please re-run with a walletname, ex. node ledger.js create joesmith`)
+    if( method !== 'addresses' && !name ) console.log( `Please re-run with a walletname, ex. node wallet.js create joesmith`)
     
     switch( method ){
-        case 'wallets': {
-            let walletNames = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>ledger.buildTransactionName(n) ).join(',') // may be multiple hashes comma separated
+        case 'addresses': {
+            let addresses = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>Wallet.buildNameWithPublicKey(n) ).join(',') // may be multiple hashes comma separated
             const url = param2.split(',') || [ param2 ]
 
             let wallets = []
-            if( walletNames.length<1 ){
-                console.log( `Please include some wallets to get information for! Ex. node ledger.js wallets fil:publickey,fred:publickey http://localhost:5000`)
+            if( addresses.length<1 ){
+                console.log( `Please include some wallets to get information for! Ex. node wallet.js wallets fil:publickey,fred:publickey http://localhost:5000`)
                 return
             }
 
-            // console.log( ledger.walletBalances() )
+            // console.log( wallet.walletBalances() )
 
             if( url[0].length > 0 ){
                 console.log( `\nExisting wallets & balances on servers (${url.join(',')}):` )
                 for (let [idx, host] of url.entries()) {
-                    const response = await urlCall({ hostname: host, path: `/node/wallets?wallets=${walletNames}` })
+                    const response = await urlCall({ hostname: host, path: `/node/wallets?addresses=${addresses}` })
                     if( response.error ){
                         console.log( response.error )
                         return
@@ -82,7 +83,7 @@ async function main(){
                 }
             } else {
                 console.log( `\nExisting wallets & balances on local:` )
-                wallets = ledger.walletBalances()
+                wallets = Wallet.balances()
             }
 
             // arrange alphabettically and display
@@ -103,7 +104,7 @@ async function main(){
             break
             }
         case 'check': {
-            const publicKey =  ledger.getPublicKey(name)
+            const publicKey =  Wallet.getUserPublicKey(name)
             if( publicKey.error ){
                 console.log( publicKey.error )
                 return
@@ -115,7 +116,7 @@ async function main(){
             const url = param2
 
             // we assume a ':' in name means they are just adding an address with public key in it
-            const userWallet = name.indexOf(':') === -1 ? ledger.createWallet(name) : ledger.updateWallet(name)
+            const userWallet = name.indexOf(':') === -1 ? Wallet.createWallet(name) : Wallet.updateWallet(name)
             if( userWallet.error ){
                 debug('red', userWallet.error)
                 break
@@ -140,7 +141,7 @@ async function main(){
             break
             }
 
-        // node ledger.js transaction {sender} {receiver} {amount} transfer [miner-server-api-url]` )
+        // node wallet.js transaction {sender} {receiver} {amount} transfer [miner-server-api-url]` )
         case 'transaction': {
             const dest = param2
             const amount = Number(param3 || 0)
@@ -158,7 +159,7 @@ async function main(){
             }
 
             // let's get the fee for transaction & seq
-            const src = ledger.buildTransactionName(name)
+            const src = Wallet.buildNameWithPublicKey(name)
             if( src.error ){
                 debug( 'red', src.error )
                 return
@@ -174,12 +175,12 @@ async function main(){
             const { fee, seq }= response.result[0]
             let note = param6
             if( note && note.startsWith('*') ){ // encrypt note for recipient only
-                const srcWallet = ledger.getWallet(src)
-                note = '*' + ledger.walletSign(srcWallet.privateKey, note)
+                const srcWallet = Wallet.getWallet(src)
+                note = '*' + Wallet.sign(srcWallet.privateKey, note)
                 debug('dim',`! encrypted note: ${note}`)
             }
-            const signedTransaction = note ? ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1, note})
-                                           : ledger.transactionSign({src, dest, amount, fee, type, seq: seq+1})
+            const signedTransaction = note ? Wallet.sign({src, dest, amount, fee, type, seq: seq+1, note})
+                                           : Wallet.sign({src, dest, amount, fee, type, seq: seq+1})
             if( signedTransaction.error ){
                 console.log( `  ! unable to create signed transaction`)
                 return
@@ -204,10 +205,10 @@ async function main(){
             break
             }
 
-        // node ledger.js deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
+        // node wallet.js deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
         case 'miner-deposit': {
             const src = name
-            const dest = ledger.buildTransactionName(param2)
+            const dest = Wallet.buildNameWithPublicKey(param2)
             const amount = Number(param3 || 0)
             const url = param4
 
@@ -215,7 +216,7 @@ async function main(){
                 debug('red',dest.error)
                 return
             }
-            // const src = ledger.buildTransactionName(name)
+            // const src = wallet.buildNameWithPublicKey(name)
             // if( src.error ){
             //     console.log( ` * rejected: ${src.error}`)
             //     return
@@ -256,7 +257,7 @@ async function main(){
                 if( verify.error ){
                     console.log( `${verify.hash}: No available block; it's invalid.`)
                 } else {
-                    const result = ledger.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
+                    const result = TransactionHandler.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
                     console.log( `${verify.hash}: VALID -- merkle proof PASSED for server, found in block (#${verify.block.index}) created on (${verify.block.timestamp})` )
                 }
             })
@@ -276,19 +277,19 @@ async function main(){
                 const {src, dest, amount, fee, seq, hash, note, meta, ...data} = transaction   
                 debug('green',`Block#${meta.blockIdx} / ${hash.substring(0,10)} :  Transaction ${src.split(':')[0]}/${seq} -> ${dest.split(':')[0]}  $${amount} (fee: $${fee})` )
                 if( note.startsWith('*') ){
-                    const srcWallet = ledger.getWallet(src)
+                    const srcWallet = Wallet.getUser(src)
                     const signedNote = note.slice(1) // remove leading *
-                    const textNote = ledger.walletDecode(srcWallet.publicKey, signedNote).slice(1)
+                    const textNote = Wallet.decode(srcWallet.publicKey, signedNote).slice(1)
                     debug('cyan',`                         ~ private (only viewable by ${dest.split(':')[0]}) note: "${textNote}"`)
                 } else if( note ){
                     debug('cyan',`                         ~ public note: ${note}`)
                 }
             }
-            // console.log( `- node ledger.js transaction-examine {hash} {miner-server-api-url}` )
+            // console.log( `- node wallet.js transaction-examine {hash} {miner-server-api-url}` )
             break
             }
         default:
-            ledgerInfo()
+            walletInfo()
             break
     }
 }

@@ -89,7 +89,7 @@ You can check the balance across multiple servers to see if it's the same:
 node ledger.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003
 ```
 
-### See Pending Transactions
+### See Queued Transactions
 Mining servers will hold open transactions that aren't yet on the blockchain, that you can see. In BTC they are in whats called 'mempool', and 
 aren't confirmed till written to blocks.
 
