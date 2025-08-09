@@ -242,6 +242,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
             // came through us, stake ownership in minting them
+            console.log( `[/transactions] transactions:`, transactions )
             TransactionHandler.updateMeta(transactions,'setMiner',Miner.nodeName)
             
             const response = TransactionHandler.newBatch(transactions)
@@ -250,8 +251,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
             response.result.forEach( (t,idx) => {
                 // show transaction attempted
-                const { src, dest, seq, amount, hash, meta }= transactions[idx]
-                debug( 'cyan', `>> [${head.nodeToken||'API'}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta) || ''}`)
+                const { src, dest, seq, amount, token, hash, meta }= transactions[idx]
+                debug( 'cyan', `>> [${head.nodeToken||'API'}]${head.url} (${src.split(':')[0]}/${seq||'-'}) amount[${token}](${amount})  ${JSON.stringify(meta) || ''}`)
 
                 // show result if error, else just broadcast it to peers
                 const { error, fee, seq: postSeq, hash: postHash, balance }= t
@@ -271,14 +272,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .post('/transactions/prepare', handlePOST(async (queries,head) => {
             debug('dim',`>> [${head.nodeToken}]${head.url}` )
             let result = []
-            queries.forEach( ({ src, amount })=> {
+            queries.forEach( ({ src, amount, token })=> {
                 // now try to complete transaction
-                const fee = TransactionHandler.getFee({ amount })
-                const srcWallet = Wallet.getWallet( src )
+                const fee = TransactionHandler.getFee({ amount, token })
+                const srcWallet = Wallet.getUser( src )
                 if( srcWallet.error ){
                     result.push( srcWallet )
                 } else {
-                    const seq = srcWallet.tx.seq
+                    const seq = srcWallet[token].tx.seq
                     if( seq.error )
                         result.push( seq )
                     else

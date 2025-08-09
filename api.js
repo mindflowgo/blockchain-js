@@ -1,3 +1,4 @@
+import Miner from './lib/Miner.js'
 import Wallet from './lib/Wallet.js'
 import TransactionHandler from './lib/TransactionHandler.js'
 
@@ -7,13 +8,13 @@ import { urlCall, fixRounding, time, debug } from './lib/helper.js'
 
 function walletInfo(){
     console.log( `wallet options:`)
-    console.log( `- node wallet.js addresses {wallet1}[,wallet2,...] [miner-server-api-url]` )
-    console.log( `- node wallet.js check {walletname}`)
-    console.log( `- node wallet.js create {walletname} [miner-server-api-url]` )
-    console.log( `- node wallet.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
-    console.log( `- node wallet.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
-    console.log( `- node wallet.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
-    console.log( `- node wallet.js examine {hash} {miner-server-api-url}` )
+    console.log( `- node api.js addresses {wallet1}[,wallet2,...] [miner-server-api-url]` )
+    console.log( `- node api.js check {walletname}`)
+    console.log( `- node api.js create {walletname} [miner-server-api-url]` )
+    console.log( `- node api.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
+    console.log( `- node api.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
+    console.log( `- node api.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
+    console.log( `- node api.js examine {hash} {miner-server-api-url}` )
     
 }
 
@@ -23,6 +24,9 @@ if( process.argv.length<3 ){
 }
 
 async function main(){
+    // Miner.dataPath
+    Wallet.load()
+
     let response = false
     let hostname = 'http://localhost:5000'
     let url = ''
@@ -35,10 +39,11 @@ async function main(){
     const param4 = process.argv[6] || ''
     const param5 = process.argv[7] || ''
     const param6 = process.argv[8] || ''
+    const param7 = process.argv[9] || ''
     if( method !== 'addresses' && !name ) console.log( `Please re-run with a walletname, ex. node wallet.js create joesmith`)
     
     switch( method ){
-        case 'addresses': {
+        case 'wallets': {
             let addresses = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>Wallet.buildNameWithPublicKey(n) ).join(',') // may be multiple hashes comma separated
             const url = param2.split(',') || [ param2 ]
 
@@ -90,12 +95,12 @@ async function main(){
             debug('dim',`   = Name =${' '.repeat(14)} = Unconfirmed =${' '.repeat(6)} = On-Chain Balance =  = Depth =   = Notes =`)
             wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
-                if( !(name.length===0 && name === '_') && i.tx.balance>0 ){
-                    let seqInfo = i.tx?.seq > 0 || i.onChain?.seq > 0 ? `${i.tx.seq},${i.onChain.seq}` : ''
+                if( !(name.length===0 && name === '_') && i.$.tx.balance>0 ){
+                    let seqInfo = i.$.tx?.seq > 0 || i.$.onChain?.seq > 0 ? `${i.$.tx.seq},${i.$.onChain.seq}` : ''
                     seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
-                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.tx.balance || '0'} `
-                              + `${' '.repeat(18-i.tx.balance.toString().length)} ${i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance} `
-                              + `${' '.repeat(25-(i.tx.balance === i.onChain.balance ? '  "' : `$ `+i.onChain.balance).toString().length)}`
+                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.$.tx.balance || '0'} `
+                              + `${' '.repeat(18-i.$.tx.balance.toString().length)} ${i.$.tx.balance === i.$.onChain.balance ? '  "' : `$ `+i.$.onChain.balance} `
+                              + `${' '.repeat(25-(i.$.tx.balance === i.$.onChain.balance ? '  "' : `$ `+i.$.onChain.balance).toString().length)}`
                               + `${' '.repeat(4-i.depth.toString().length)}${i.depth}`
                               + `      ${i.note || ''}`
                             )
@@ -116,21 +121,20 @@ async function main(){
             const url = param2
 
             // we assume a ':' in name means they are just adding an address with public key in it
-            const userWallet = name.indexOf(':') === -1 ? Wallet.createWallet(name) : Wallet.updateWallet(name)
-            if( userWallet.error ){
-                debug('red', userWallet.error)
+            const wallet = name.indexOf(':') === -1 ? Wallet.generate(name) : Wallet.getUser(name)
+            if( wallet.error ){
+                debug('red', wallet.error)
                 break
             }
             
-            console.log( `\n> ${name.indexOf(':') === -1 ? 'Created' : 'Added'}! *${userWallet.name}* with publicKey(${userWallet.publicKey})` )
+            console.log( `\n> ${name.indexOf(':') === -1 ? 'Created' : 'Added'}! *${wallet.name}* with publicKey(${wallet.publicKey})` )
 
             if( !url || url.length<10 ) return
 
             console.log( `- pushing to url(${url})`)
             // broadcast to a miner: don't share privateKey (obviously)!
-            delete userWallet.privateKey
-            delete userWallet.balance
-            response = await urlCall({ hostname: url, path: '/wallet_sync', body: [ userWallet ] })
+            delete wallet.privateKey
+            response = await urlCall({ hostname: url, path: '/wallet_sync', body: [ wallet ] })
             if( response.error ) return response
 
             console.log(`- synced to server:` )
@@ -141,13 +145,15 @@ async function main(){
             break
             }
 
-        // node wallet.js transaction {sender} {receiver} {amount} transfer [miner-server-api-url]` )
+        // node wallet.js transaction {sender} {receiver} {token} {amount} transfer [miner-server-api-url]` )
         case 'transaction': {
             const dest = param2
-            const amount = Number(param3 || 0)
-            const type = param4.length<3 ? 'transfer' : param4
-            const url = param5
-
+            const token = param3
+            const amount = Number(param4 || 0)
+            const type = param5.length<3 ? 'transfer' : param5
+            const url = param6
+            const note = param7 || ''
+console.log( `[transaction] dest(${dest}) token(${token}) amount(${amount}) type(${type}) url(${url})`)
             if( !['escrow','transfer'].includes(type) ){
                 debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
@@ -164,31 +170,34 @@ async function main(){
                 debug( 'red', src.error )
                 return
             }
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
+            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount, token }] })
             if( response.error || !response.result ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
 
-
+console.log( ` ../transactios/prepare result: `, response )
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
             const { fee, seq }= response.result[0]
-            let note = param6
-            if( note && note.startsWith('*') ){ // encrypt note for recipient only
-                const srcWallet = Wallet.getWallet(src)
+            if( note.length>0 && note.startsWith('*') ){ // encrypt note for recipient only
+                const srcWallet = Wallet.getUser(src)
                 note = '*' + Wallet.sign(srcWallet.privateKey, note)
                 debug('dim',`! encrypted note: ${note}`)
             }
-            const signedTransaction = note ? Wallet.sign({src, dest, amount, fee, type, seq: seq+1, note})
-                                           : Wallet.sign({src, dest, amount, fee, type, seq: seq+1})
-            if( signedTransaction.error ){
-                console.log( `  ! unable to create signed transaction`)
+            console.log( `src(${src}) dest(${dest}) amount(${amount}) fee (${fee}) seq(${seq})`)
+            const transactionData = {src, dest, amount, token, fee, type, seq: seq+1, note }
+            const transaction = TransactionHandler.prepareTransaction(transactionData)
+            const balanceCheck = TransactionHandler.checkTokenBalances(transaction,{ blockIdx })
+            if( !transaction.error && !balanceCheck.error )
+    console.log( `transaction: `, transaction )
+            if( transaction.error ){
+                console.log( `  ! Signing error:`, transaction.error )
                 return
             }
 
             // post the signed transaction
-            debug( 'dim', ` - Queried server for fee/seq: [${src.split(':')[0]}/${seq+1} -> ${dest.split(':')[0]} $${signedTransaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
-            response = await urlCall({ hostname: url, path: '/transactions', body: [ signedTransaction ] })
+            debug( 'dim', ` - Queried server for fee/seq: [${src.split(':')[0]}/${seq+1} -> ${dest.split(':')[0]} ${token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
+            response = await urlCall({ hostname: url, path: '/transactions', body: [ transaction ] })
             if( response.error ){
                 debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
                 return
