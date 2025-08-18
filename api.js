@@ -1,4 +1,3 @@
-import Miner from './lib/Miner.js'
 import Wallet from './lib/Wallet.js'
 import TransactionHandler from './lib/TransactionHandler.js'
 
@@ -25,7 +24,8 @@ if( process.argv.length<3 ){
 
 async function main(){
     // Miner.dataPath
-    Wallet.load()
+    const userWallet = new Wallet()
+    const userTransactionHandler = new TransactionHandler()
 
     let response = false
     let hostname = 'http://localhost:5000'
@@ -44,7 +44,7 @@ async function main(){
     
     switch( method ){
         case 'wallets': {
-            let addresses = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>Wallet.buildNameWithPublicKey(n) ).join(',') // may be multiple hashes comma separated
+            let addresses = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>userWallet.buildNameWithPublicKey(n) ).join(',') // may be multiple hashes comma separated
             const url = param2.split(',') || [ param2 ]
 
             let wallets = []
@@ -88,19 +88,23 @@ async function main(){
                 }
             } else {
                 console.log( `\nExisting wallets & balances on local:` )
-                wallets = Wallet.balances()
+                wallets = userWallet.balances()
             }
 
             // arrange alphabettically and display
             debug('dim',`   = Name =${' '.repeat(14)} = Unconfirmed =${' '.repeat(6)} = On-Chain Balance =  = Depth =   = Notes =`)
+            console.log( 'wallets:', wallets )
+            const BASE_TOKEN = userTransactionHandler.BASE_TOKEN
             wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
                 const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
-                if( !(name.length===0 && name === '_') && i.$.tx.balance>0 ){
-                    let seqInfo = i.$.tx?.seq > 0 || i.$.onChain?.seq > 0 ? `${i.$.tx.seq},${i.$.onChain.seq}` : ''
+                // find wallet with this name, and cycle through the tokens
+                // for( const token of this.listTokens(w) ){for( const token of this.listTokens(w) ){
+                if( !(name.length===0 && name === userTransactionHandler.MINT_TOKEN) && i[BASE_TOKEN].tx.balance>0 ){
+                    let seqInfo = i[BASE_TOKEN].tx?.seq > 0 || i[BASE_TOKEN].onChain?.seq > 0 ? `${i[BASE_TOKEN].seq.tx},${i[BASE_TOKEN].seq.onChain}` : ''
                     seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
-                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i.$.tx.balance || '0'} `
-                              + `${' '.repeat(18-i.$.tx.balance.toString().length)} ${i.$.tx.balance === i.$.onChain.balance ? '  "' : `$ `+i.$.onChain.balance} `
-                              + `${' '.repeat(25-(i.$.tx.balance === i.$.onChain.balance ? '  "' : `$ `+i.$.onChain.balance).toString().length)}`
+                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i[BASE_TOKEN].tx.balance || '0'} `
+                              + `${' '.repeat(18-i[BASE_TOKEN].tx.balance.toString().length)} ${i[BASE_TOKEN].tx.balance === i[BASE_TOKEN].onChain.balance ? '  "' : `$ `+i[BASE_TOKEN].onChain.balance} `
+                              + `${' '.repeat(25-(i[BASE_TOKEN].tx.balance === i[BASE_TOKEN].onChain.balance ? '  "' : `$ `+i[BASE_TOKEN].onChain.balance).toString().length)}`
                               + `${' '.repeat(4-i.depth.toString().length)}${i.depth}`
                               + `      ${i.note || ''}`
                             )
@@ -109,7 +113,7 @@ async function main(){
             break
             }
         case 'check': {
-            const publicKey =  Wallet.getUserPublicKey(name)
+            const publicKey =  userWallet.getUserPublicKey(name)
             if( publicKey.error ){
                 console.log( publicKey.error )
                 return
@@ -121,7 +125,7 @@ async function main(){
             const url = param2
 
             // we assume a ':' in name means they are just adding an address with public key in it
-            const wallet = name.indexOf(':') === -1 ? Wallet.generate(name) : Wallet.getUser(name)
+            const wallet = name.indexOf(':') === -1 ? userWallet.generate(name) : userWallet.getUser(name)
             if( wallet.error ){
                 debug('red', wallet.error)
                 break
@@ -145,32 +149,30 @@ async function main(){
             break
             }
 
-        // node wallet.js transaction {sender} {receiver} {token} {amount} transfer [miner-server-api-url]` )
+        // node wallet.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
         case 'transaction': {
             const dest = param2
-            const token = param3
-            const amount = Number(param4 || 0)
-            const type = param5.length<3 ? 'transfer' : param5
-            const url = param6
-            const note = param7 || ''
-console.log( `[transaction] dest(${dest}) token(${token}) amount(${amount}) type(${type}) url(${url})`)
+            const amount = param3
+            const type = param4.length<3 ? 'transfer' : param4
+            const url = param5
+            const note = param6 || ''
+console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${url})`)
             if( !['escrow','transfer'].includes(type) ){
                 debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
             }
             // console.log( ` amount(${amount}) type(${type}) url(${url})`)
-            if( !dest || amount <= 0 || !url ){
-                debug( 'red', `A valid dest (${dest}) and positive amount (${amount}) is needed, type(${type}), server (${url}) too; try again.` )
+            if( !dest || !url ){
                 return
             }
 
             // let's get the fee for transaction & seq
-            const src = Wallet.buildNameWithPublicKey(name)
+            const src = userWallet.buildNameWithPublicKey(name)
             if( src.error ){
                 debug( 'red', src.error )
                 return
             }
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount, token }] })
+            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
             if( response.error || !response.result ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
@@ -180,14 +182,14 @@ console.log( ` ../transactios/prepare result: `, response )
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
             const { fee, seq }= response.result[0]
             if( note.length>0 && note.startsWith('*') ){ // encrypt note for recipient only
-                const srcWallet = Wallet.getUser(src)
-                note = '*' + Wallet.sign(srcWallet.privateKey, note)
+                const srcWallet = userWallet.getUser(src)
+                note = '*' + userWallet.sign(srcWallet.privateKey, note)
                 debug('dim',`! encrypted note: ${note}`)
             }
             console.log( `src(${src}) dest(${dest}) amount(${amount}) fee (${fee}) seq(${seq})`)
-            const transactionData = {src, dest, amount, token, fee, type, seq: seq+1, note }
-            const transaction = TransactionHandler.prepareTransaction(transactionData)
-            const balanceCheck = TransactionHandler.checkTokenBalances(transaction,{ blockIdx })
+            const transactionData = {src, dest, amount, fee, type, seq: seq+1, note }
+            const transaction = userTransactionHandler.getSeqAndSign(transactionData)
+            const balanceCheck = userTransactionHandler.checkTokenBalances(transaction,{ blockIdx })
             if( !transaction.error && !balanceCheck.error )
     console.log( `transaction: `, transaction )
             if( transaction.error ){
@@ -196,7 +198,7 @@ console.log( ` ../transactios/prepare result: `, response )
             }
 
             // post the signed transaction
-            debug( 'dim', ` - Queried server for fee/seq: [${src.split(':')[0]}/${seq+1} -> ${dest.split(':')[0]} ${token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
+            debug( 'dim', ` - Queried server for fee/seq: [${userWallet.getNameOnly(src)}/${seq+1} -> ${userWallet.getNameOnly(dest)} ${transaction.token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
             response = await urlCall({ hostname: url, path: '/transactions', body: [ transaction ] })
             if( response.error ){
                 debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
@@ -217,8 +219,8 @@ console.log( ` ../transactios/prepare result: `, response )
         // node wallet.js deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
         case 'miner-deposit': {
             const src = name
-            const dest = Wallet.buildNameWithPublicKey(param2)
-            const amount = Number(param3 || 0)
+            const dest = userWallet.buildNameWithPublicKey(param2)
+            const amount = param3
             const url = param4
 
             if( dest.error ){
@@ -266,7 +268,7 @@ console.log( ` ../transactios/prepare result: `, response )
                 if( verify.error ){
                     console.log( `${verify.hash}: No available block; it's invalid.`)
                 } else {
-                    const result = TransactionHandler.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
+                    const result = userTransactionHandler.merkleVerify(verify.hash, verify.proof, verify.merkleRoot)
                     console.log( `${verify.hash}: VALID -- merkle proof PASSED for server, found in block (#${verify.block.index}) created on (${verify.block.timestamp})` )
                 }
             })
@@ -284,12 +286,12 @@ console.log( ` ../transactios/prepare result: `, response )
             
             for( const transaction of response.result ){
                 const {src, dest, amount, fee, seq, hash, note, meta, ...data} = transaction   
-                debug('green',`Block#${meta.blockIdx} / ${hash.substring(0,10)} :  Transaction ${src.split(':')[0]}/${seq} -> ${dest.split(':')[0]}  $${amount} (fee: $${fee})` )
+                debug('green',`Block#${meta.blockIdx} / ${hash.substring(0,10)} :  Transaction ${userWallet.getNameOnly(src)}/${seq} -> ${userWallet.getNameOnly(dest)}  $${amount} (fee: $${fee})` )
                 if( note.startsWith('*') ){
-                    const srcWallet = Wallet.getUser(src)
+                    const srcWallet = userWallet.getUser(src)
                     const signedNote = note.slice(1) // remove leading *
-                    const textNote = Wallet.decode(srcWallet.publicKey, signedNote).slice(1)
-                    debug('cyan',`                         ~ private (only viewable by ${dest.split(':')[0]}) note: "${textNote}"`)
+                    const textNote = userWallet.decode(srcWallet.publicKey, signedNote).slice(1)
+                    debug('cyan',`                         ~ private (only viewable by ${userWallet.getNameOnly(dest)}) note: "${textNote}"`)
                 } else if( note ){
                     debug('cyan',`                         ~ public note: ${note}`)
                 }
