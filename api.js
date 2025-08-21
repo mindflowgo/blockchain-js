@@ -24,8 +24,9 @@ if( process.argv.length<3 ){
 
 async function main(){
     // Miner.dataPath
-    const userWallet = new Wallet()
     const userTransactionHandler = new TransactionHandler()
+    const userWallet = new Wallet(undefined, userTransactionHandler)
+    userTransactionHandler.setHelperClasses(userWallet)
 
     let response = false
     let hostname = 'http://localhost:5000'
@@ -148,21 +149,45 @@ async function main(){
             } )
             break
             }
+        case 'token-create': {
+            const token = param2
+            const amount = param3
+            const tokenAdmin = param4
+            const url = param5
+
+            console.log( `Creating a token ( ${token} ) with circulation of ${amount}...` )
+            if( !url || url.length<10 ) return
+
+            const srcName = Wallet.getUser(tokenAdmin)
+            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, tokenAdmin }] })
+            if( response.error ) return response
+
+            console.log(`- synced to server:` )
+            response.result.forEach( item=>{
+                if( Object.values(item) == 'ok' )
+                    console.log( ` * ${Object.keys(item)} confirmed sync'd` )
+            } )
+            break
+
+        }
 
         // node wallet.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
         case 'transaction': {
-            const dest = param2
-            const amount = param3
+            let dest = param2
+            let amount = param3
             const type = param4.length<3 ? 'transfer' : param4
             const url = param5
             const note = param6 || ''
+            let token
+            { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${url})`)
             if( !['escrow','transfer'].includes(type) ){
                 debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
             }
-            // console.log( ` amount(${amount}) type(${type}) url(${url})`)
-            if( !dest || !url ){
+            dest = userWallet.buildNameWithPublicKey(dest)
+            if( dest.error || !dest || !url ){
+                debug( 'red', dest.error )
                 return
             }
 
@@ -187,11 +212,10 @@ console.log( ` ../transactios/prepare result: `, response )
                 debug('dim',`! encrypted note: ${note}`)
             }
             console.log( `src(${src}) dest(${dest}) amount(${amount}) fee (${fee}) seq(${seq})`)
-            const transactionData = {src, dest, amount, fee, type, seq: seq+1, note }
-            const transaction = userTransactionHandler.getSeqAndSign(transactionData)
-            const balanceCheck = userTransactionHandler.checkTokenBalances(transaction,{ blockIdx })
-            if( !transaction.error && !balanceCheck.error )
-    console.log( `transaction: `, transaction )
+            const transactionData = {src, dest, amount, token, fee, type, seq: seq+1, note }
+            const transaction = userTransactionHandler.transactionSign(transactionData)
+            console.log( `transaction: `, transaction )
+            // if( !transaction.error )
             if( transaction.error ){
                 console.log( `  ! Signing error:`, transaction.error )
                 return

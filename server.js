@@ -294,6 +294,14 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             return { result }
             }, Miner.P2P.getNodeState()))
 
+        .post('/token/auth', handlePOST(async (token,amount,tokenAdmin,head) => {
+            let result = []
+
+            
+            debug( `>>${head.nodeAuth}${head.url} result:`, result )
+            return { result }
+            }, Miner.P2P.getNodeState()))
+            
         .any('/*', (res, req) => {
             /* Wildcards - make sure to catch them last */
             res.end( JSON.stringify({ error: `Invalid request: '${req.getUrl()}'` }) )
