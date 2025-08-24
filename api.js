@@ -14,6 +14,9 @@ function walletInfo(){
     console.log( `- node api.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
     console.log( `- node api.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
     console.log( `- node api.js examine {hash} {miner-server-api-url}` )
+    console.log( `- node api.js token-create {token} {amount} {admin-user} {miner-server-api-url}` )
+    console.log( `- node api.js token-supply {token} {+/- amount} [{auth-signing}] {miner-server-api-url}` )
+    console.log( `- node api.js token-airdrop {token}{amount} [{auth-signing}] {miner-server-api-url}` )
     
 }
 
@@ -150,16 +153,52 @@ async function main(){
             break
             }
         case 'token-create': {
-            const token = param2
-            const amount = param3
-            const tokenAdmin = param4
-            const url = param5
+            const token = param1
+            const amount = param2
+            const tokenAdmin = param3
+            const url = param4
 
-            console.log( `Creating a token ( ${token} ) with circulation of ${amount}...` )
             if( !url || url.length<10 ) return
 
-            const srcName = Wallet.getUser(tokenAdmin)
-            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, tokenAdmin }] })
+            const tokenWallet = userWallet.getUser(tokenAdmin)
+            if( tokenWallet.error || !tokenWallet.privateKey ){
+                console.error( `Sorry, user '${tokenAdmin}' does not have a privateKey on this system, and so can't administer a token issue.`)
+                return
+            }
+            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, action: 'create' }] })
+            if( response.error ) return response
+            console.log( `Attempting to create a token ( ${token} ) with circulation of ${amount} administered by '${tokenAdmin}'...` )
+
+            console.log(`- synced to server:` )
+            response.result.forEach( item=>{
+                if( Object.values(item) == 'ok' )
+                    console.log( ` * ${Object.keys(item)} confirmed sync'd` )
+            } )
+            break
+        }
+
+        // node api.js token-airdrop jax$100000 miner0 [authSig] [miner-server-api-url]` )
+        case 'token-airdrop': {
+            let amount = param2
+            const dest = param3
+            let authSig = '', url
+            if( param4.startsWith('http') ){
+                url = param4
+            } else {
+                authSig = param4
+                url = param5
+            }
+            if( !url || url.length<10 ) return
+
+            { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount ) }
+
+            // get auth info for token
+            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount }] })
+            if( response.error ) return response
+
+            // token creator needs to sign off on airdrops
+            const tokenAuth = ''
+            response = await urlCall({ hostname: url, path: '/token/airdrop', body: [{ token, amount, tokenAuth }] })
             if( response.error ) return response
 
             console.log(`- synced to server:` )
@@ -171,7 +210,7 @@ async function main(){
 
         }
 
-        // node wallet.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
+        // node api.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
         case 'transaction': {
             let dest = param2
             let amount = param3

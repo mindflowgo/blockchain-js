@@ -89,7 +89,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             for( const hash of req.query.hash.split(',') ){
                 // find in the transaction hash for speed (vs scanning blocks)
-                const index = Miner.Mempool.findHashBlockIndex(hash)
+                const index = Miner.Mempool.Hashes.findBlockIdx(hash)
                 if( !index ){
                     result.push({ error: `Invalid hash ${hash}`, hash, block: false })
                     continue
@@ -105,7 +105,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
         .get('/transactions/pending', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeAuth}]${req.url}?${req.getQuery()}`)
 
-            let result = Miner.Mempool.getQueued({ miner: Miner.nodeName })
+            let result = Miner.Mempool.Queue.getMinerSorted({ miner: Miner.nodeName })
             res.end( JSON.stringify({ error: false, result }) )
             }, Miner.P2P.getNodeState()))
 
@@ -114,7 +114,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
             let result = [], error = ''
             for( const hash of req.query.hash.split(',') ){
-                const index = Miner.Mempool.findHashBlockIndex(hash)
+                const index = Miner.Mempool.Hashes.findBlockIdx(hash)
                 if( index ){
                     const block = Miner.Blockchain.getBlock(index)
                     const transactions = Miner.TransactionHandler.filter({ transactions: block.transactions, hashes: [hash] })
@@ -148,7 +148,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // this only allows announced blocks that would chronologically fit onto our chain; in the event, 
             // our chain is off (or theirs), we simply ignore the block announcement -- we re-sync chains in 
             // heartbeat process
-            let blockMaxIndex = Blockchainheight()
+            let blockMaxIndex = Miner.Blockchain.height()
             let blockIdxSequenceOk = true
             for( const block of blocks ){
                 // only accept announcement blocks that are chronological to our blockchain height
@@ -213,8 +213,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
         .post('/transactions/announce', handlePOST(async (transactions,head) => {
             let result = Miner.TransactionHandler.processTransactions( transactions )
-
-                return { result }
+            return { result }
             }, Miner.P2P.getNodeState()))
 
         .post('/transactions/expired', handlePOST(async (transactions,head) => {
@@ -235,10 +234,8 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             }, Miner.P2P.getNodeState()))
 
         .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
-            // came through us, stake ownership in minting them
-            console.log( `[/transactions] transactions:`, transactions )
+            // came through us, stake minting right
             Miner.TransactionHandler.updateMeta(transactions,'miner',Miner.nodeName)
-            console.log( `POST transactions: `, transactions)
             const response = Miner.TransactionHandler.processTransactions(transactions)
             // let result = []
             if( response.error ) return response
@@ -294,13 +291,54 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             return { result }
             }, Miner.P2P.getNodeState()))
 
-        .post('/token/auth', handlePOST(async (token,amount,tokenAdmin,head) => {
+        // get fee and auth infoseq #
+        .post('/token/auth', handlePOST(async (token,amount,action,head) => {
             let result = []
-
-            
+            // BUGBUG futurelogic for more complex token authorization could be added 
+            // for now, we treat each token created as controlled by one entity
+            const tokenWallet = Miner.Wallet.getUser(token, false)
+            const fee = 0 // could be based on amount of currency
+            result = { action, fee, tokenAdmin: !tokenWallet.error ? tokenWallet.tokenAdmin : '' }
+            console.log( `head:`, head )
             debug( `>>${head.nodeAuth}${head.url} result:`, result )
             return { result }
             }, Miner.P2P.getNodeState()))
+            // response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, tokenAdmin }] })
+                        
+        .post('/token/create', handlePOST(async (token,supply,admin,head) => {
+            let result = []
+            const transactions = Miner.TransactionHandler.createToken(supply, token, admin)
+            if( transactions.error ) return transactions
+
+            // let's run this transaction
+            const response = Miner.TransactionHandler.processTransactions(transactions)
+            if( response.error ) return response
+            debug( `>>${head.nodeAuth}${head.url} result:`, result )
+            // return { response}
+            return { result }
+            }, Miner.P2P.getNodeState()))
+
+        .post('/token/airdrop', handlePOST(async (transactions,head) => {
+            // response = await urlCall({ hostname: url, path: '/token/airdrop', body: [{ token, amount, tokenAuth }] })
+            const srcWallet = this.Wallet.getUser(token)
+            // check that airdrop is authorized by token admin
+            // const tokenAdmin = srcWallet.tokenAdmin
+            // this.Wallet.decode(tokenAdmin, tokenAuth) === `${token}|${amount}|`
+            // const tokenAuth = Miner.Wallet.
+            // const transaction = { src: token, dest, amount, token, txSig = '', hash
+            // processTransaction({src, dest, amount, token = '', fee = 0, seq = 0, txSig = '', hash = '', ...data}, options = {} ) {
+            //     const { blockIdx = -1, txUpdate = false, manageMempool = true }= options
+
+            //     createToken(supply, token = this.BASE_TOKEN, admin = this.nodeName){
+                
+            const response = Miner.TransactionHandler.processTransactions(transactions)
+            // let result = []
+            if( response.error ) return response
+
+
+            }, Miner.P2P.getNodeState()))
+
+
             
         .any('/*', (res, req) => {
             /* Wildcards - make sure to catch them last */
