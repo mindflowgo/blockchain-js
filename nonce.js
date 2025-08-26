@@ -1,4 +1,4 @@
-import { urlCall, sha256Hash, fixRounding, time } from './lib/helper.js'
+import { sha256Hash, fixRounding, time } from './lib/helper.js'
 
 // sample BLOCK
 const block2 =  {

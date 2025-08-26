@@ -48,7 +48,7 @@ async function main(){
     switch( method ){
         case 'wallets': {
             let addresses = param1 === 'ALL' ? 'ALL' : param1.split(',').map( n=>userWallet.buildNameWithPublicKey(n) ).join(',') // may be multiple hashes comma separated
-            const url = param2.split(',') || [ param2 ]
+            const miner_url = param2.split(',') || [ param2 ]
 
             let wallets = []
             if( addresses.length<1 ){
@@ -58,10 +58,10 @@ async function main(){
 
             // console.log( wallet.walletBalances() )
 
-            if( url[0].length > 0 ){
-                console.log( `\nExisting wallets & balances on servers (${url.join(',')}):` )
-                for (let [idx, host] of url.entries()) {
-                    const response = await urlCall({ hostname: host, path: `/node/wallets?addresses=${addresses}` })
+            if( miner_url[0].length > 0 ){
+                console.log( `\nExisting wallets & balances on servers (${miner_url.join(',')}):` )
+                for (let [idx, host] of miner_url.entries()) {
+                    const response = await urlCall({ url: host + 'node/wallets?addresses=' + addresses })
                     if( response.error ){
                         console.log( response.error )
                         return
@@ -125,7 +125,7 @@ async function main(){
             break
             }
         case 'create': {
-            const url = param2
+            const miner_url = param2
 
             // we assume a ':' in name means they are just adding an address with public key in it
             const wallet = name.indexOf(':') === -1 ? userWallet.generate(name) : userWallet.getUser(name)
@@ -136,12 +136,12 @@ async function main(){
             
             console.log( `\n> ${name.indexOf(':') === -1 ? 'Created' : 'Added'}! *${wallet.name}* with publicKey(${wallet.publicKey})` )
 
-            if( !url || url.length<10 ) return
+            if( !miner_url || miner_url.length<10 ) return
 
-            console.log( `- pushing to url(${url})`)
+            console.log( `- pushing to url(${miner_url})`)
             // broadcast to a miner: don't share privateKey (obviously)!
             delete wallet.privateKey
-            response = await urlCall({ hostname: url, path: '/wallet_sync', body: [ wallet ] })
+            response = await urlCall({ url: miner_url + 'wallet_sync', body: [ wallet ] })
             if( response.error ) return response
 
             console.log(`- synced to server:` )
@@ -155,16 +155,16 @@ async function main(){
             const token = param1
             const amount = param2
             const tokenAdmin = param3
-            const url = param4
+            const miner_url = param4
 
-            if( !url || url.length<10 ) return
+            if( !miner_url || miner_url.length<10 ) return
 
             const tokenWallet = userWallet.getUser(tokenAdmin)
             if( tokenWallet.error || !tokenWallet.privateKey ){
                 console.error( `Sorry, user '${tokenAdmin}' does not have a privateKey on this system, and so can't administer a token issue.`)
                 return
             }
-            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, action: 'create' }] })
+            response = await urlCall({ url: miner_url + 'token/auth', body: [{ token, amount, action: 'create' }] })
             if( response.error ) return response
             console.log( `Attempting to create a token ( ${token} ) with circulation of ${amount} administered by '${tokenAdmin}'...` )
 
@@ -187,17 +187,17 @@ async function main(){
                 authSig = param4
                 url = param5
             }
-            if( !url || url.length<10 ) return
+            if( !miner_url || miner_url.length<10 ) return
 
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount ) }
 
             // get auth info for token
-            response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount }] })
+            response = await urlCall({ url: miner_url + 'token/auth', body: [{ token, amount }] })
             if( response.error ) return response
 
             // token creator needs to sign off on airdrops
             const tokenAuth = ''
-            response = await urlCall({ hostname: url, path: '/token/airdrop', body: [{ token, amount, tokenAuth }] })
+            response = await urlCall({ url: miner_url + 'token/airdrop', body: [{ token, amount, tokenAuth }] })
             if( response.error ) return response
 
             console.log(`- synced to server:` )
@@ -214,11 +214,11 @@ async function main(){
             let dest = param2
             let amount = param3
             const type = param4.length<3 ? 'transfer' : param4
-            const url = param5
+            const miner_url = param5
             const note = param6 || ''
             let token
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
-console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${url})`)
+console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${miner_url})`)
             if( !['escrow','transfer'].includes(type) ){
                 debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
@@ -235,7 +235,7 @@ console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${
                 debug( 'red', src.error )
                 return
             }
-            response = await urlCall({ hostname: url, path: '/transaction/prepare', body: { src, amount } })
+            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, amount } })
             if( response.error ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
@@ -261,9 +261,9 @@ console.log( ` ../transactios/prepare result: `, response )
 
             // post the signed transaction
             debug( 'dim', ` - Queried server for fee/seq: [${userWallet.getNameOnly(src)}/${seq+1} -> ${userWallet.getNameOnly(dest)} ${transaction.token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
-            response = await urlCall({ hostname: url, path: '/transaction', body: transaction })
+            response = await urlCall({ url: miner_url + 'transaction', body: transaction })
             if( response.error ){
-                debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
+                debug( 'red', `   x mining server (${miner_url}) rejected it: ${response.error}`)
                 return
             }
             const result = response.result
@@ -284,7 +284,7 @@ console.log( ` ../transactios/prepare result: `, response )
             const src = name
             const dest = userWallet.buildNameWithPublicKey(param2)
             let amount = param3
-            const url = param4
+            const miner_url = param4
             let token
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 
@@ -294,19 +294,18 @@ console.log( ` ../transactios/prepare result: `, response )
             }
 
             // let's get the fee for transaction & seq
-            response = await urlCall({ hostname: url, path: '/transaction/prepare', body: { src, amount } })
+            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, amount } })
             if( response.error ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
-            console.log( `miner deposit prepare: `, response )
             const { fee, seq }= response
 
             const transaction = {src, dest, amount, fee, type: 'minerDeposit', seq: seq+1}
-            response = await urlCall({ hostname: url, path: '/transaction', body: transaction })
+            response = await urlCall({ url: miner_url + 'transaction', body: transaction })
             if( response.error ){
-                debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
+                debug( 'red', `   x mining server (${miner_url}) rejected it: ${response.error}`)
                 return
             }
 
@@ -314,14 +313,14 @@ console.log( ` ../transactios/prepare result: `, response )
             if( result.error )
                 debug( 'red', ` * mining server REJECTED transaction: ${result.error}` )
             else
-                debug( 'green', ` * mining server accepted. [${userWallet.getNameOnly(src)}/${seq+1} Balance: ${token}${result.meta.balance}; Hash: ${result.hash}` )
+                debug( 'green', ` * mining server accepted. [${userWallet.getNameOnly(src)}/${seq+1}] Balance: ${token}${result.meta.balance}; Hash: ${result.hash}` )
             break
             }
 
         case 'transaction-verify': {// merkle tree proof returned, thus proving the node has the transaction
             const hash = param1 // may be multiple hashes comma separated
-            hostname = param2
-            response = await urlCall({ hostname, path: `/transactions/verify?hash=${hash}` })
+            const miner_url = param2
+            response = await urlCall({ url: miner_url + 'transaction/verify?hash=' + hash })
             if( response.error || !response.result ){
                 console.log( `  x invalid hash - aborting:`, response )
                 return
@@ -339,8 +338,8 @@ console.log( ` ../transactios/prepare result: `, response )
 
         case 'examine': {// merkle tree proof returned, thus proving the node has the transaction
             const hash = param1 // may be multiple hashes comma separated
-            hostname = param2
-            response = await urlCall({ hostname, path: `/transactions?hash=${hash}` })
+            const miner_url = param2
+            response = await urlCall({ url: miner_url + 'transaction?hash=' + hash })
             if( response.error || !response.result ){
                 console.log( `  x invalid hash - aborting:`, response )
                 return
