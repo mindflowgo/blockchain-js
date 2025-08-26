@@ -1,5 +1,5 @@
 /**************************************************************************
- * Simple Fully Functional Miner.Blockchain Example
+ * Simple Fully Functional serverMiner.Blockchain Example
  * 
  * (c) 2025 Filipe Laborde, fil@rezox.com
  * 
@@ -42,8 +42,6 @@ but save the other branch in case it becomes longer. The tie will be broken when
 proof-of-work is found and one branch becomes longer;
 */
 
-let dataPath = './data'
-
 const DEBUG = 1
 
 // if run from terminal, spawn up
@@ -64,7 +62,7 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
 
     async function main() {
         // start miner memory process
-        Miner.start({ nodeName, host, port, hosts, dataPath });
+        const serverMiner = new Miner({ nodeName, host, port, hosts, dataPath: './data' })
 
         // now run webserver to engage with network
         uWS.App({ /* cert_file_name: cert, key_file_name: key */})
@@ -72,16 +70,16 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             debug('dim', `>> [${req.nodeAuth}]${req.url}`)
             const fromIndex = Number(req.query.fromIndex || 0)
             const type = ['hashes','meta'].includes(req.query.type) ? req.query.type : ''
-            const result = Miner.Blockchain.getChain(fromIndex, 100, type)
+            const result = serverMiner.Blockchain.getChain(fromIndex, 100, type)
             res.end( JSON.stringify({ error: false, result }) )
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
         
         .get('/node/wallets', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeAuth}]${req.url}:`)
             const addresses = req.query.addresses === 'ALL' ? [] : req.query.addresses.split(',')
-            const result = Miner.Wallet.balances(addresses)
+            const result = serverMiner.Wallet.balances(addresses)
             res.end( JSON.stringify({ error: false, result }) )
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
         .get('/transactions/verify', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeAuth}]${req.url}?${req.getQuery()}`)
@@ -89,234 +87,182 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             let result = []
             for( const hash of req.query.hash.split(',') ){
                 // find in the transaction hash for speed (vs scanning blocks)
-                const index = Miner.Mempool.Hashes.findBlockIdx(hash)
+                const index = serverMiner.Mempool.Hashes.findBlockIdx(hash)
                 if( !index ){
                     result.push({ error: `Invalid hash ${hash}`, hash, block: false })
                     continue
                 }
 
-                const block = Miner.Blockchain.getBlock(index)
-                const { proof, merkleRoot } = Miner.TransactionHandler.merkleProof(block.transactions, hash)
+                const block = serverMiner.Blockchain.getBlock(index)
+                const { proof, merkleRoot } = serverMiner.TransactionHandler.merkleProof(block.transactions, hash)
                 result.push({ hash, block: { index, timestamp: block.timestamp }, merkleRoot, proof })
             }
             res.end( JSON.stringify({ error: false, result }) )
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
         .get('/transactions/pending', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeAuth}]${req.url}?${req.getQuery()}`)
 
-            let result = Miner.Mempool.Queue.getMinerSorted({ miner: Miner.nodeName })
+            let result = serverMiner.Mempool.Queue.getMinerSorted({ miner: serverMiner.nodeName })
             res.end( JSON.stringify({ error: false, result }) )
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
         .get('/transactions', handleGET((res, req) => {
             debug('dim', `>> [${req.nodeAuth}]${req.url}?${req.getQuery()}`)
 
             let result = [], error = ''
             for( const hash of req.query.hash.split(',') ){
-                const index = Miner.Mempool.Hashes.findBlockIdx(hash)
+                const index = serverMiner.Mempool.Hashes.findBlockIdx(hash)
                 if( index ){
-                    const block = Miner.Blockchain.getBlock(index)
-                    const transactions = Miner.TransactionHandler.filter({ transactions: block.transactions, hashes: [hash] })
+                    const block = serverMiner.Blockchain.getBlock(index)
+                    const transactions = serverMiner.TransactionHandler.filter({ transactions: block.transactions, hashes: [hash] })
                     if( transactions.length === 1 )
                         result.push( { ...transaction[0], meta: { blockIdx: index } } )
                 }
             }
             res.end( JSON.stringify({ error: false, result }) )
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
             
         .post('/node/announce', handlePOST(async (info,head) => {
             debug( 'dim', `>> [${head.nodeAuth}]${head.url} hostname(${info.hostname.replace('http://localhost:','')}) type(${info.type}) blockchainHeight(${info.blockchainHeight}) pendingTransactions(${info.pendingTransactionsCnt}) peers(${info.peers.join(',').replaceAll('http://localhost:','')})` )
 
             // include the post contactee, and add to our peer list
             info.peers.push( info.hostname ) 
-            Miner.P2P.addPeerHosts( info.peers )
+            serverMiner.P2P.addPeerHosts( info.peers )
 
             // they sent index/hash of their latest block, we'll send our hash for that block
-            return { error: false, ...Miner.P2P.pingInfo(info.blockAtHeight.index) }
-            }, Miner.P2P.getNodeState() ))
+            return { error: false, ...serverMiner.P2P.pingInfo(info.blockAtHeight.index) }
+            }, serverMiner.P2P.getNodeState() ))
 
-        .post('/blocks/announce', handlePOST(async (blocks,head) => {
-            debug( 'cyan', `>> [${head.nodeAuth}]${head.url} #${blocks.map(b=>b.index).join(',')}` )
+        .post('/block/announce', handlePOST(async (block,head) => {
+            debug( 'cyan', `>> [${head.nodeAuth}]${head.url} #${block.index}` )
 
-            Miner.P2P.getNodeState('ADD_CHAIN')
+            serverMiner.P2P.getNodeState('ADD_BLOCK')
             // prevent attempting to write it till we know if this announced block added
-            if( Miner.worker.status === 'MINING' ){
-                debug( 'yellow', `   \_ pausing our mining`)
-                Miner.worker.status = 'MINING_PAUSE' 
-            }
-            // this only allows announced blocks that would chronologically fit onto our chain; in the event, 
-            // our chain is off (or theirs), we simply ignore the block announcement -- we re-sync chains in 
-            // heartbeat process
-            let blockMaxIndex = Miner.Blockchain.height()
-            let blockIdxSequenceOk = true
-            for( const block of blocks ){
-                // only accept announcement blocks that are chronological to our blockchain height
-                debug( 'cyan', `  ~ processing incoming block #${block.index} (our height()=${Blockchainheight()})` )
-                if( block.index === blockMaxIndex++ ){
-                    block.transactions.forEach( t => {
-                        // console.log( ` block trans: ${Miner.Wallet.getNameOnly(t.src)}/${t.seq}` )
-                        const conflictTransaction = Miner.TransactionHandler.queue.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
-                        const matchTransaction = Miner.TransactionHandler.queue.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
-                        if( conflictTransaction.length > 0 ){
-                            debug( 'red', `  ! announced transaction [${Miner.Wallet.getNameOnly(t.src)}/${t.seq} -> ${Miner.Wallet.getNameOnly(t.dest)} $${t.amount}] CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
-                            if( conflictTransaction[0].meta.miner.indexOf(' MINING:')>0 )
-                                debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.miner}`)
-                                
-                            // miner.transactionReverse(conflictTransaction[0], { clearQueued: true }) // don't bother revesing, it will stale-out
-                        } else if( matchTransaction.length > 0 ){
-                            debug( 'dim', ` .. incoming block #${block.index} [${Miner.Wallet.getNameOnly(t.src)}/${t.seq} -> ${Miner.Wallet.getNameOnly(t.dest)} $${t.amount}] matches a pending we have (good)` )
-                        }
-                    })
-                } else {
-                    blockIdxSequenceOk = false
-                    debug( 'red', `    ! addBlockchain will skip block #${block.index}, expecting next block to be ${blockMaxIndex-1}. No problem: we will re-sync chain later.`)
-                    if( block.index > blockMaxIndex ){
-                        // bigger so lets' request update from them.
-                        debug('dim', ` .. getting peer blocks from ${head.hostname} as they have more than us!`)
-                        const syncResult = Miner.P2P.syncPeerBlocks(head.hostname)
-                        if( syncResult.error ) debug( 'red', syncResult.error )
+            serverMiner.MinerWorker.pauseMining()
+
+            // only accept block announcements that chain onto our chain, ignore others.
+            debug( 'cyan', `  ~ processing incoming block #${block.index} (our height()=${Blockchainheight()})` )
+            if( block.index === serverMiner.Blockchain.height() ){
+                block.transactions.forEach( t => {
+                    // console.log( ` block trans: ${serverMiner.Wallet.getNameOnly(t.src)}/${t.seq}` )
+                    const conflictTransaction = serverMiner.TransactionHandler.queue.filter( pT => pT.src === t.src && pT.seq > 0 && pT.seq === t.seq && pT.hash !== t.hash )
+                    const matchTransaction = serverMiner.TransactionHandler.queue.filter( pT => pT.src === t.src && pT.seq === t.seq && pT.hash === t.hash )
+                    if( conflictTransaction.length > 0 ){
+                        debug( 'red', `  ! announced transaction [${serverMiner.Wallet.getNameOnly(t.src)}/${t.seq} -> ${serverMiner.Wallet.getNameOnly(t.dest)} $${t.amount}] CONFLICTS with one of ours (same user/seq), ours' hash: ${t.hash} ; ours will stale out when this block#${block.index} added.` )
+                        if( conflictTransaction[0].meta.miner.indexOf(' MINING:')>0 )
+                            debug( 'red', `  ~ in fact, we were already attempting to mine SAME our version: ${conflictTransaction[0].meta.miner}`)
+                            
+                        // miner.transactionReverse(conflictTransaction[0], { clearQueued: true }) // don't bother revesing, it will stale-out
+                    } else if( matchTransaction.length > 0 ){
+                        debug( 'dim', ` .. incoming block #${block.index} [${serverMiner.Wallet.getNameOnly(t.src)}/${t.seq} -> ${serverMiner.Wallet.getNameOnly(t.dest)} $${t.amount}] matches a pending we have (good)` )
                     }
-                }
+                })
+            } else if( block.index > serverMiner.Blockchain.height() ){
+                // bigger so lets' request update from them.
+                debug('dim', ` .. getting peer blocks from ${head.hostname} as they have more than us!`)
+                const syncResult = serverMiner.P2P.syncPeerBlocks(head.hostname)
+                if( syncResult.error ) debug( 'red', syncResult.error )
+            } else {
+                debug( 'red', `    ! addBlockchain will skip block #${block.index}, expecting next block to be ${blockMaxIndex-1}. No problem: we will re-sync chain later.`)
             }
 
             // only bother trying to add block if next in sequence
             let addResult = {}
-            if( blockIdxSequenceOk ){
-                addResult = Miner.Blockchain.addBlockchain(blocks)
+            if( block.index === serverMiner.Blockchain.height() ){
+                addResult = serverMiner.Blockchain.addBlock(block)
                 if( addResult.error ){
-                    Miner.worker.status = Miner.worker.status.replace('_PAUSE','') // ex. 'MINING_PAUSE|SOLVE_PAUSE => MINING|SOLVE
-                    Miner.P2P.getNodeState('ONLINE')
+                    // adding income block failed, let's finish ours (if paused)
+                    serverMiner.MinerWorker.continueMining()
+                    serverMiner.P2P.getNodeState('ONLINE')
                     return addResult
                 }
-
-                // remove any that were lingering in the pendingTransactions; go online again
-                const { hashes, resetLedger }= addResult
-                if( resetLedger ) debug('red', `The ledger should NEVER be reset during a simple block addition. Queued are ignored.`)
-                Miner.Mempool.deleteBatch({ hashes })
             }
-            Miner.P2P.getNodeState('ONLINE')
+            serverMiner.P2P.getNodeState('ONLINE')
 
-            // if we are mining same block, cancel our block (we could leave it to finish, 
-            // then discover block already exists, but wasted CPU)
-            if( (Miner.worker.status.indexOf('_PAUSE') > -1 ) ){
-                debug( 'yellow', `**MINING-STOP** Incoming mined-block SAME index #${blocks[0].index} as ours (our completion state: ${Miner.worker.status}), `
-                            +`aborting/cleaning-up our mining effort; reversing transactions.` )
-                Miner.worker.node.postMessage({action: 'ABORT' })
-                // // wait for worker to reverse the block, transactions, etc.
-                // await waitReady(miner, 'worker', 'status', 'READY')
-            }
+            // if we are mining same block, cancel our block (our miner will try again for next block)
+            serverMiner.MinerWorker.stopMining()
 
-            const { addBlockCnt, transactionCnt }= addResult
-            return { addBlockCnt, transactionCnt }
-            }, Miner.P2P.getNodeState() ))
+            return addResult
+            }, serverMiner.P2P.getNodeState() ))
 
-        .post('/transactions/announce', handlePOST(async (transactions,head) => {
-            let result = Miner.TransactionHandler.processTransactions( transactions )
+        .post('/transaction/announce', handlePOST(async (transactions,head) => {
+            let result = serverMiner.TransactionHandler.processTransaction( transaction )
             return { result }
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
-        .post('/transactions/expired', handlePOST(async (transactions,head) => {
-            let result = []
-            transactions.forEach( t => {
-                debug( `>> [${head.nodeAuth}]${head.url} [${Miner.Wallet.getNameOnly(t.src)}/${t.seq} -> ${Miner.Wallet.getNameOnly(t.dest)} $${t.amount}]:` )
-                const transResult = Miner.TransactionHandler.reverseBatch( t, { clearQueued:true })
-                result.push( transResult )
-                if( transResult.error ){
-                    debug( 'red', `ERROR! ${transResult.error}}` )
-                } else {
-                    // broadcast it onward to peers if it was valid, and we killed it.
-                    // this.broadcastPeers({ path: '/transactions/expired', data: [t], all: true })
-                    debug( 'blue', `- Expired transaction [${Miner.Wallet.getNameOnly(t.src)}/${t.seq} > ${Miner.Wallet.getNameOnly(t.dest)} $${t.amount}], miner(${t.miner}) and relaying onward it's gone.)` )
-                }
-                })
-                return { result }
-            }, Miner.P2P.getNodeState()))
-
-        .post('/transactions', handlePOST(async (transactions,head) => { // user initiated transaction to server
+        .post('/transaction', handlePOST(async (transaction,head) => { // user initiated transaction to server
             // came through us, stake minting right
-            Miner.TransactionHandler.updateMeta(transactions,'miner',Miner.nodeName)
-            const response = Miner.TransactionHandler.processTransactions(transactions)
+            serverMiner.TransactionHandler.updateMeta([transaction],'miner',serverMiner.nodeName)
+            const response = serverMiner.TransactionHandler.processTransaction(transaction)
+
+            // debug only BUGUG
+            const { src, dest, seq, amount, hash, meta }= transaction
+            debug( 'cyan', `>> [${head.nodeAuth||'API'}]${head.url} (${serverMiner.Wallet.getNameOnly(src)}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta) || ''}`)
+
             // let result = []
             if( response.error ) return response
 
-            response.result.forEach( (t,idx) => {
-                // show transaction attempted
-                const { src, dest, seq, amount, hash, meta }= transactions[idx]
-                debug( 'cyan', `>> [${head.nodeAuth||'API'}]${head.url} (${Miner.Wallet.getNameOnly(src)}/${seq||'-'}) amount(${amount})  ${JSON.stringify(meta) || ''}`)
-
-                // show result if error, else just broadcast it to peers
-                const { error, fee, seq: postSeq, hash: postHash, balance }= t
-                if( error ) {
-                    debug('red',`   x Rejected: ${error}`)
-                } else { 
-                    // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
-                    Miner.P2P.broadcastTransactions( [t] )                
-                }
-            })
-
+            // mempool transactions once accepted, are broadcast widely so others can get the balance+seq for that user
+            serverMiner.P2P.broadcastTransaction( transaction )                
+                
             // console.log( `[transaction] result:`, result )
-            return { result: response.result }
-            }, Miner.P2P.getNodeState()))
+            return { result: response }
+            }, serverMiner.P2P.getNodeState()))
 
         // get fee and seq #
-        .post('/transactions/prepare', handlePOST(async (queries,head) => {
+        .post('/transaction/prepare', handlePOST(async ({src, amount },head) => {
             debug('dim',`>> [${head.nodeAuth}]${head.url}` )
-            let result = []
-            queries.forEach( ({ src, amount })=> {
-                // now try to complete transaction
-                const fee = Miner.TransactionHandler.getFee({ amount })
-                const srcWallet = Miner.Wallet.getUser( src )
-                if( srcWallet.error ){
-                    result.push( srcWallet )
-                } else {
-                    const seq = srcWallet.seq.tx
-                    if( seq.error )
-                        result.push( seq )
-                    else
-                        result.push( { fee, seq, publicKey: srcWallet.publicKey })
-                }
-            })
-            return { result }
-            }, Miner.P2P.getNodeState()))
+            // now try to complete transaction
+            const fee = serverMiner.TransactionHandler.getFee({ amount })
+            const srcWallet = serverMiner.Wallet.getUser( src )
+            if( srcWallet.error )
+                return srcWallet
+            
+            const seq = srcWallet.seq.tx
+            if( seq.error )
+                return seq
+            
+            return { fee, seq, publicKey: srcWallet.publicKey }
+            }, serverMiner.P2P.getNodeState()))
                         
         .post('/node/wallets', handlePOST(async (wallets,head) => {
             let result = []
             wallets.forEach( walletData => {
                 const name = walletData.name
-                const updateWallet = Miner.Wallet.updateWallet(name, walletData)
+                const updateWallet = serverMiner.Wallet.updateWallet(name, walletData)
                 result.push({ name, error: updateWallet.error })
             })
             debug( `>>${head.nodeAuth}${head.url} result:`, result )
             return { result }
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
         // get fee and auth infoseq #
         .post('/token/auth', handlePOST(async (token,amount,action,head) => {
             let result = []
             // BUGBUG futurelogic for more complex token authorization could be added 
             // for now, we treat each token created as controlled by one entity
-            const tokenWallet = Miner.Wallet.getUser(token, false)
+            const tokenWallet = serverMiner.Wallet.getUser(token, false)
             const fee = 0 // could be based on amount of currency
             result = { action, fee, tokenAdmin: !tokenWallet.error ? tokenWallet.tokenAdmin : '' }
             console.log( `head:`, head )
             debug( `>>${head.nodeAuth}${head.url} result:`, result )
             return { result }
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
             // response = await urlCall({ hostname: url, path: '/token/auth', body: [{ token, amount, tokenAdmin }] })
                         
         .post('/token/create', handlePOST(async (token,supply,admin,head) => {
             let result = []
-            const transactions = Miner.TransactionHandler.createToken(supply, token, admin)
+            const transactions = serverMiner.TransactionHandler.createToken(supply, token, admin)
             if( transactions.error ) return transactions
 
             // let's run this transaction
-            const response = Miner.TransactionHandler.processTransactions(transactions)
+            const response = serverMiner.TransactionHandler.processTransactions(transactions)
             if( response.error ) return response
             debug( `>>${head.nodeAuth}${head.url} result:`, result )
             // return { response}
             return { result }
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
         .post('/token/airdrop', handlePOST(async (transactions,head) => {
             // response = await urlCall({ hostname: url, path: '/token/airdrop', body: [{ token, amount, tokenAuth }] })
@@ -324,19 +270,19 @@ if( process.argv.length>1 && process.argv[1].indexOf('server.js')>0 ){
             // check that airdrop is authorized by token admin
             // const tokenAdmin = srcWallet.tokenAdmin
             // this.Wallet.decode(tokenAdmin, tokenAuth) === `${token}|${amount}|`
-            // const tokenAuth = Miner.Wallet.
+            // const tokenAuth = serverMiner.Wallet.
             // const transaction = { src: token, dest, amount, token, txSig = '', hash
             // processTransaction({src, dest, amount, token = '', fee = 0, seq = 0, txSig = '', hash = '', ...data}, options = {} ) {
             //     const { blockIdx = -1, txUpdate = false, manageMempool = true }= options
 
             //     createToken(supply, token = this.BASE_TOKEN, admin = this.nodeName){
                 
-            const response = Miner.TransactionHandler.processTransactions(transactions)
+            const response = serverMiner.TransactionHandler.processTransactions(transactions)
             // let result = []
             if( response.error ) return response
 
 
-            }, Miner.P2P.getNodeState()))
+            }, serverMiner.P2P.getNodeState()))
 
 
             

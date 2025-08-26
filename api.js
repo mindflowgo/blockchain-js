@@ -26,7 +26,6 @@ if( process.argv.length<3 ){
 }
 
 async function main(){
-    // Miner.dataPath
     const userTransactionHandler = new TransactionHandler()
     const userWallet = new Wallet(undefined, userTransactionHandler)
     userTransactionHandler.setHelperClasses(userWallet)
@@ -236,15 +235,15 @@ console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${
                 debug( 'red', src.error )
                 return
             }
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
-            if( response.error || !response.result ){
+            response = await urlCall({ hostname: url, path: '/transaction/prepare', body: { src, amount } })
+            if( response.error ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
 
 console.log( ` ../transactios/prepare result: `, response )
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
-            const { fee, seq }= response.result[0]
+            const { fee, seq }= response
             if( note.length>0 && note.startsWith('*') ){ // encrypt note for recipient only
                 const srcWallet = userWallet.getUser(src)
                 note = '*' + userWallet.sign(srcWallet.privateKey, note)
@@ -262,60 +261,60 @@ console.log( ` ../transactios/prepare result: `, response )
 
             // post the signed transaction
             debug( 'dim', ` - Queried server for fee/seq: [${userWallet.getNameOnly(src)}/${seq+1} -> ${userWallet.getNameOnly(dest)} ${transaction.token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
-            response = await urlCall({ hostname: url, path: '/transactions', body: [ transaction ] })
+            response = await urlCall({ hostname: url, path: '/transaction', body: transaction })
             if( response.error ){
                 debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
                 return
             }
-            const result = response.result[0]
+            const result = response.result
             if( result.error ){
                 debug( 'red', `   x mining server REJECTED transaction: ${result.error}` )
             } else {
-                if( result.meta.warning ) debug('cyan', `   ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
+                if( result.meta?.warning ) debug('cyan', `   ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
 
-                debug( 'green', `   \ mining server accepted - transaction hash: ${result.hash}, expected balance: $${result.meta.balance}` ) // Seq: ${result.seq}, Fee: $${result.fee},
+                debug( 'green', `   \ mining server accepted - transaction hash: ${result.hash}, expected balance: $${result.meta?.balance}` ) // Seq: ${result.seq}, Fee: $${result.fee},
             }
             debug( 'dim', ` `)
             break
             }
 
         // node wallet.js deposit {miner-name} {receiver} {amount} [miner-server-api-url]` )
+        // SAMPLE example. This will work when you put miner-name and use miner api URL; IRL only server could enter deposit
         case 'miner-deposit': {
             const src = name
             const dest = userWallet.buildNameWithPublicKey(param2)
-            const amount = param3
+            let amount = param3
             const url = param4
+            let token
+            { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 
             if( dest.error ){
                 debug('red',dest.error)
                 return
             }
-            // const src = wallet.buildNameWithPublicKey(name)
-            // if( src.error ){
-            //     console.log( ` * rejected: ${src.error}`)
-            //     return
-            // }
 
             // let's get the fee for transaction & seq
-            response = await urlCall({ hostname: url, path: '/transactions/prepare', body: [{ src, amount }] })
-            if( response.error || !response.result ){
+            response = await urlCall({ hostname: url, path: '/transaction/prepare', body: { src, amount } })
+            if( response.error ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
-            const { fee, seq }= response.result[0]
+            console.log( `miner deposit prepare: `, response )
+            const { fee, seq }= response
 
-            const minerTransaction = {src, dest, amount, fee, type: 'minerDeposit', seq: seq+1}
-            response = await urlCall({ hostname: url, path: '/transactions', body: [ minerTransaction ] })
+            const transaction = {src, dest, amount, fee, type: 'minerDeposit', seq: seq+1}
+            response = await urlCall({ hostname: url, path: '/transaction', body: transaction })
             if( response.error ){
                 debug( 'red', `   x mining server (${url}) rejected it: ${response.error}`)
                 return
             }
-            const result = response.result[0]
+
+            const result = response.result
             if( result.error )
                 debug( 'red', ` * mining server REJECTED transaction: ${result.error}` )
             else
-                debug( 'green', ` * mining server accepted. Seq: ${seq}, Fee: $${fee}, Transaction Hash: ${result.hash}, Balance: $${result.meta.balance}` )
+                debug( 'green', ` * mining server accepted. [${userWallet.getNameOnly(src)}/${seq+1} Balance: ${token}${result.meta.balance}; Hash: ${result.hash}` )
             break
             }
 
