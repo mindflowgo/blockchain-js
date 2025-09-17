@@ -17,7 +17,7 @@ No database is used; all data is stored as text/zip files in a directory.
 
 When transactions occur, if they are new to a node, and signed properly, the node will announce it to all it's peers. It will then take the bank of the pendingTransactionss, ordered by (using SQL to model) - priority types (deposit, mint issue), then signed transactions, then the functional fees, block rewards -- each of these groups ordered by timestamp, user/seq:
 ```sql
-ORDER BY type='minerDeposit' || type='mintIssue' DESC, txSig <> '' DESC, timestamp ASC, src ASC, seq ASC  LIMIT 10
+ORDER BY type='minerDeposit' || type='tokenIssue' DESC, txAuth <> '' DESC, timestamp ASC, src ASC, seq ASC  LIMIT 10
 ```
 
 ### Technologies Used
@@ -36,16 +36,28 @@ node server.js debug miner0 5000
 
 Once a miner is running, you can call it directly:
 
-### Increase mint supply
+### Create a new token
+Creates a token called 'jax', with a supply of 100,000. 
 ```bash
-curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]' http://localhost:5000/transactions
+node api.js token-create jax$ 100000 http://localhost:5000/
+```
+
+### Increasing/Decreasing [burning] token supply
+Only the token creator can adjust it's supply, and airdrop/gift to others.
+Their adjust request is signed with (token|amount|seq)
+```bash
+node api.js token-adjust jax$ +100000 http://localhost:5000/
+
+node api.js token-airdrop jax$5000 miner1 http://localhost:5000/
+
+node api.js token-ownership jax$ miner1 http://localhost:5000/
+
+curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"tokenCreate"}]' http://localhost:5000/transactions
 ```
 
 ### Grant Money to Miner
 ```bash
-curl --data '[{"src":"_mint","dest":"miner0","amount":"10000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
-curl --data '[{"src":"_mint","dest":"miner1","amount":"10000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
-curl --data '[{"src":"_mint","dest":"miner3","amount":"10000","type":"mintAirDrop"}]' http://localhost:5003/transactions
+node api.js token-airdrop '$100000' miner0 http://localhost:5000/
 ```
 
 ### User Deposit in Miner; then Withdraw to User
@@ -86,6 +98,7 @@ node api.js wallets fil,miner0:93Wag45TTBijDVg696N5VqjtbmMagGKbZc7W5kLoty8xZ htt
 
 You can check the balance across multiple servers to see if it's the same:
 ```bash
+node api.js wallets ALL http://localhost:5000
 node api.js wallets ALL http://localhost:5000,http://localhost:5001,http://localhost:5003
 ```
 
@@ -107,15 +120,16 @@ node server.js debug miner3 5003 http://localhost:5000,http://localhost:5003
 
 ### Increase mint
 ```bash
-curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"mintIssue"}]' http://localhost:5000/transactions
+curl --data '[{"src":"*$","dest":"$","amount":"$2000000","type":"tokenIssue"}]' http://localhost:5000/transactions
+curl --data '[{"src":"*$","dest":"sol$","amount":"sol$2000000","type":"tokenIssue"}]' http://localhost:5000/transactions
 ```
 
 ### AirDrop to the miners
 ```bash
-curl --data '[{"src":"$","dest":"miner0","amount":"100000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
-curl --data '[{"src":"$","dest":"miner1","amount":"100000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
-curl --data '[{"src":"$","dest":"miner3","amount":"100000","type":"mintAirDrop"}]' http://localhost:5003/transactions && \
-curl --data '[{"src":"$","dest":"miner4","amount":"100000","type":"mintAirDrop"}]' http://localhost:5004/transactions
+curl --data '[{"src":"$","dest":"miner0","amount":"$100000","type":"tokenAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"$","dest":"miner1","amount":"$100000","type":"tokenAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"$","dest":"miner3","amount":"$100000","type":"tokenAirDrop"}]' http://localhost:5003/transactions && \
+curl --data '[{"src":"$","dest":"miner4","amount":"$100000","type":"tokenAirDrop"}]' http://localhost:5004/transactions
 ```
 
 ### Create local accounts
@@ -168,11 +182,11 @@ If you're interested in helping build out this project or the UI for it, get in 
 ### Try Stress-Testing 3 Nodes
 ```bash
 # miner 0,1 online only, fresh
-curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
-curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"tokenAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"tokenAirDrop"}]' http://localhost:5001/transactions && \
 
 # miner 0
-curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"mintAirDrop"}]' http://localhost:5000/transactions && \
+curl --data '[{"src":"_mint","dest":"miner0","amount":"1000","type":"tokenAirDrop"}]' http://localhost:5000/transactions && \
 node api.js miner-deposit miner0 fil 50 http://localhost:5000/ && \
 
 node api.js transaction fil fred 2 transfer http://localhost:5000 && \
@@ -188,7 +202,7 @@ node api.js transaction fred jane 1.5 transfer http://localhost:5000 && \
 node api.js transaction jane fil 1 transfer http://localhost:5000 
 
 # miner 1
-curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"mintAirDrop"}]' http://localhost:5001/transactions && \
+curl --data '[{"src":"_mint","dest":"miner1","amount":"1000","type":"tokenAirDrop"}]' http://localhost:5001/transactions && \
 node api.js miner-deposit miner1 rob 50 http://localhost:5001/ && \
 
 node api.js transaction rob smith2 2 transfer http://localhost:5001 && \

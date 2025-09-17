@@ -1,49 +1,44 @@
+import Crypto from './lib/Crypto.js'
 import Wallet from './lib/Wallet.js'
 import TransactionHandler from './lib/TransactionHandler.js'
 
-import { urlCall, fixRounding, time, debug } from './lib/helper.js'
+import { urlCall, fixRounding, time, debug, formatURL } from './lib/helper.js'
 
-// Terminal functionality - this only runs when the file is run directly from terminal (so it's dual-use)
+// from .env
+const BLOCKCHAIN_PRIVATEKEY = process.env.BLOCKCHAIN_PRIVATEKEY
+const USER_WALLET = process.env.USER_WALLET
 
 function walletInfo(){
-    console.log( `wallet options:`)
-    console.log( `- node api.js addresses {wallet1}[,wallet2,...] [miner-server-api-url]` )
-    console.log( `- node api.js check {walletname}`)
-    console.log( `- node api.js create {walletname} [miner-server-api-url]` )
-    console.log( `- node api.js miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
-    console.log( `- node api.js transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
-    console.log( `- node api.js transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
-    console.log( `- node api.js examine {hash} {miner-server-api-url}` )
-    console.log( `- node api.js token-create {token} {amount} {admin-user} {miner-server-api-url}` )
-    console.log( `- node api.js token-supply {token} {+/- amount} [{auth-signing}] {miner-server-api-url}` )
-    console.log( `- node api.js token-airdrop {token}{amount} [{auth-signing}] {miner-server-api-url}` )
-    
+    debug( `wallet options:`)
+    debug( `- ./api.sh addresses {wallet1}[,wallet2,...] [miner-server-api-url]` )
+    debug( `- ./api.sh check {walletname}`)
+    debug( `- ./api.sh create {walletname} [miner-server-api-url]` )
+    debug( `- ./api.sh miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
+    debug( `- ./api.sh transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
+    debug( `- ./api.sh transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
+    debug( `- ./api.sh examine {hash} {miner-server-api-url}` )
+    debug( `- ./api.sh token-create {token} {+/- amount} {admin-user} {miner-server-api-url}` )
+    debug( `- ./api.sh token-supply {token} {+/- amount} [{auth-signing}] {miner-server-api-url}` )
+    debug( `- ./api.sh token-airdrop {token}{amount} {walletname} {miner-server-api-url}` )
 }
 
-if( process.argv.length<3 ){
+if( process.argv.length<3 || !USER_WALLET ){
     walletInfo()
     process.exit()
 }
 
-async function main(){
+async function commandLineProcess(){
     const userTransactionHandler = new TransactionHandler()
-    const userWallet = new Wallet(undefined, userTransactionHandler)
+    const userWallet = new Wallet(USER_WALLET, userTransactionHandler)
     userTransactionHandler.setHelperClasses(userWallet)
 
     let response = false
-    let hostname = 'http://localhost:5000'
-    let url = ''
+    let miner_url = formatURL('localhost:5000')
+    let token = userTransactionHandler.BASE_TOKEN
     // default path for the user wallet
-    const method = process.argv[2]
-    const param1 = process.argv[3] || ''
+    const [ method, param1, param2, param3, param4, param5, param6, param7 ] = process.argv.slice(2)
     const name = param1
-    const param2 = process.argv[4] || ''
-    const param3 = process.argv[5] || ''
-    const param4 = process.argv[6] || ''
-    const param5 = process.argv[7] || ''
-    const param6 = process.argv[8] || ''
-    const param7 = process.argv[9] || ''
-    if( method !== 'addresses' && !name ) console.log( `Please re-run with a walletname, ex. node wallet.js create joesmith`)
+    if( method !== 'addresses' && !name ) console.log( `Please re-run with a walletname, ex. api.sh create joesmith`)
     
     switch( method ){
         case 'wallets': {
@@ -52,7 +47,7 @@ async function main(){
 
             let wallets = []
             if( addresses.length<1 ){
-                console.log( `Please include some wallets to get information for! Ex. node wallet.js wallets fil:publickey,fred:publickey http://localhost:5000`)
+                console.log( `Please include some wallets to get information for! Ex. node wallet.js wallets fil:publickey,fred:publickey localhost:5000`)
                 return
             }
 
@@ -61,7 +56,7 @@ async function main(){
             if( miner_url[0].length > 0 ){
                 console.log( `\nExisting wallets & balances on servers (${miner_url.join(',')}):` )
                 for (let [idx, host] of miner_url.entries()) {
-                    const response = await urlCall({ url: host + 'node/wallets?addresses=' + addresses })
+                    const response = await urlCall({ url: formatURL(host) + 'node/wallets?addresses=' + addresses })
                     if( response.error ){
                         console.log( response.error )
                         return
@@ -125,7 +120,7 @@ async function main(){
             break
             }
         case 'create': {
-            const miner_url = param2
+            if( param2 ) miner_url = formatURL(param2)
 
             // we assume a ':' in name means they are just adding an address with public key in it
             const wallet = name.indexOf(':') === -1 ? userWallet.generate(name) : userWallet.getUser(name)
@@ -136,9 +131,6 @@ async function main(){
             
             console.log( `\n> ${name.indexOf(':') === -1 ? 'Created' : 'Added'}! *${wallet.name}* with publicKey(${wallet.publicKey})` )
 
-            if( !miner_url || miner_url.length<10 ) return
-
-            console.log( `- pushing to url(${miner_url})`)
             // broadcast to a miner: don't share privateKey (obviously)!
             delete wallet.privateKey
             response = await urlCall({ url: miner_url + 'wallet_sync', body: [ wallet ] })
@@ -152,73 +144,123 @@ async function main(){
             break
             }
         case 'token-create': {
-            const token = param1
+            token = param1
             const amount = param2
-            const tokenAdmin = param3
-            const miner_url = param4
+            const admin = userWallet.buildNameWithPublicKey(param3)
+            if( param4 ) miner_url = formatURL(param4)
 
-            if( !miner_url || miner_url.length<10 ) return
-
-            const tokenWallet = userWallet.getUser(tokenAdmin)
-            if( tokenWallet.error || !tokenWallet.privateKey ){
-                console.error( `Sorry, user '${tokenAdmin}' does not have a privateKey on this system, and so can't administer a token issue.`)
+console.log( `[token-create] amount(${amount}) token(${token}) admin(${admin} miner_url(${miner_url}))`, admin)
+            if( admin.error || admin.startsWith('http') ){
+                console.log( `! Invalid token administrator. Please add one. ${admin.error || ''}`)
                 return
             }
-            response = await urlCall({ url: miner_url + 'token/auth', body: [{ token, amount, action: 'create' }] })
-            if( response.error ) return response
-            console.log( `Attempting to create a token ( ${token} ) with circulation of ${amount} administered by '${tokenAdmin}'...` )
+            if( !miner_url || miner_url.length<10 ){
+                console.log( `x Miner URL invalid, rejecting.`)
+                return
+            }
+            const wallet = userWallet.getUser(admin)
+            if( wallet.error || !wallet.privateKey ){
+                console.error( `Sorry, user '${admin}' does not have a privateKey on this node, and so can't administer a token issue.`)
+                return
+            }
 
-            console.log(`- synced to server:` )
-            response.result.forEach( item=>{
-                if( Object.values(item) == 'ok' )
-                    console.log( ` * ${Object.keys(item)} confirmed sync'd` )
-            } )
+            // get the transaction(s) to sign
+            response = await urlCall({ url: miner_url + 'token/auth', body: { action: 'tokenCreate', token, amount, admin } })
+            if( response.error ){
+                console.log( response.error )
+                return
+            }
+            const tokenAuth = response.result // { action, token, amount, fee, admin, transactions }
+
+            // auth error checking
+            if( tokenAuth.action !== 'tokenCreate' || tokenAuth.admin !== admin ){
+                console.log( `Unable to create token as network rejected request.`)
+                return
+            }
+
+            // now let's re-submit the signed transactions for finalizing token creation.
+            console.log( `response: `, tokenAuth.transactions )
+            let transactions = []
+            for( const transaction of tokenAuth.transactions )
+                // signer specified in transaction 'admin' field, hopefully they exist on our node
+                transactions.push( userTransactionHandler.transactionSign(transaction, transaction.admin) )
+            tokenAuth.transactions = transactions
+            console.log( `response: `, tokenAuth.transactions )
+
+            response = await urlCall({ url: miner_url + 'token/transactions', body: tokenAuth })
+            if( response.error ) return response
+            console.log( `Attempting to create a token ( ${token} ) administered by '${admin}'... response:`, JSON.stringify(response) )
+            const result = response.result
+            if( result.error )
+                debug( 'red', ` * token creation REJECTED transaction: ${result.error}` )
+            else
+                debug( 'green', ` * token creation accepted. [${userWallet.getNameOnly(result.src)}] Balance: ${token}${result.meta?.balance || '-'}; Hash: ${result.hash}` )
             break
+
         }
 
-        // node api.js token-airdrop jax$100000 miner0 [authSig] [miner-server-api-url]` )
+        // node api.js token-airdrop jax$100000 miner0 [miner-server-api-url]` )
         case 'token-airdrop': {
-            let amount = param2
-            const dest = param3
-            let authSig = '', url
-            if( param4.startsWith('http') ){
-                url = param4
-            } else {
-                authSig = param4
-                url = param5
-            }
-            if( !miner_url || miner_url.length<10 ) return
+            let amount = param1
+            const dest = userWallet.buildNameWithPublicKey(param2)
+            if( param3 ) miner_url = formatURL(param3)
+            
+console.log( `param1: ${param1}, param2: ${param2}, param3: ${param3}, miner_url(${miner_url})`)
+            if( dest.error ){ console.log( dest.error ); return }
 
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount ) }
 
-            // get auth info for token
-            response = await urlCall({ url: miner_url + 'token/auth', body: [{ token, amount }] })
-            if( response.error ) return response
+            // get the transaction(s) to sign
+            response = await urlCall({ url: miner_url + 'token/auth', body: { action: 'tokenAirdrop', token, amount, dest } })
+            if( response.error ) {
+                console.log( response.error )
+                return
+            }
+            const tokenAuth = response.result // { action, token, amount, fee, admin, transactions }
+            console.log( `token-aridrop auth request: `, tokenAuth )
 
-            // token creator needs to sign off on airdrops
-            const tokenAuth = ''
-            response = await urlCall({ url: miner_url + 'token/airdrop', body: [{ token, amount, tokenAuth }] })
-            if( response.error ) return response
+            if( tokenAuth.admin && tokenAuth.admin.startsWith('*root:') && process.env.BLOCKCHAIN_PRIVATEKEY )
+                console.log( 'dim', ` * privateKey for BASE_TOKEN available; good!`)
+            else if( tokenAuth.admin && userWallet.getUser(tokenAuth.admin).privateKey )
+                console.log( 'dim', ` * privateKey for admin (${tokenAuth.admin}) of ${token} available; good!`)
+            else {
+                console.log( 'red', `Unable to proceed as missing privateKey for singing airdrop.`)
+                return
+            }
 
-            console.log(`- synced to server:` )
-            response.result.forEach( item=>{
-                if( Object.values(item) == 'ok' )
-                    console.log( ` * ${Object.keys(item)} confirmed sync'd` )
-            } )
+            // now let's re-submit the signed transactions for finalizing token creation (using privateKey we have for admin).
+            let transactions = []
+            for( const transaction of tokenAuth.transactions ){
+                const _transaction = userTransactionHandler.transactionSign(transaction,tokenAuth.admin)
+                transactions.push( _transaction ) // userTransactionHandler.transactionSign(transaction,tokenAuth.admin) )
+            }
+            tokenAuth.transactions = transactions
+
+            response = await urlCall({ url: miner_url + 'token/transactions', body: tokenAuth })
+            console.log( `Attempting to perform airdrop for ( ${token} ) administered by '${tokenAuth.admin}'... response:`, JSON.stringify(response) )
+            if( response.error ) {
+                console.log( response.error )
+                return
+            }
+            const result = response.result
+            if( result.error )
+                debug( 'red', ` * token airdrop REJECTED transaction: ${result.error}` )
+            else
+                debug( 'green', ` * token airdrop accepted. [${userWallet.getNameOnly(dest)}] Balance: ${token}${result.meta?.balance || '-'};` )
             break
 
         }
-
+        
         // node api.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
         case 'transaction': {
             let dest = param2
             let amount = param3
             const type = param4.length<3 ? 'transfer' : param4
-            const miner_url = param5
+            if( param5 ) miner_url = formatURL(param5)
             const note = param6 || ''
-            let token
+
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
-console.log( `[transaction] dest(${dest}) amount(${amount}) type(${type}) url(${miner_url})`)
+
             if( !['escrow','transfer'].includes(type) ){
                 debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
                 return
@@ -245,7 +287,7 @@ console.log( ` ../transactios/prepare result: `, response )
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
             const { fee, seq }= response
             if( note.length>0 && note.startsWith('*') ){ // encrypt note for recipient only
-                const srcWallet = userWallet.getUser(src)
+                const srcWallet = userWallet.getUserOrCreate(src)
                 note = '*' + userWallet.sign(srcWallet.privateKey, note)
                 debug('dim',`! encrypted note: ${note}`)
             }
@@ -284,8 +326,8 @@ console.log( ` ../transactios/prepare result: `, response )
             const src = name
             const dest = userWallet.buildNameWithPublicKey(param2)
             let amount = param3
-            const miner_url = param4
-            let token
+            if( param4 ) miner_url = formatURL(param4)
+
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 
             if( dest.error ){
@@ -319,7 +361,8 @@ console.log( ` ../transactios/prepare result: `, response )
 
         case 'transaction-verify': {// merkle tree proof returned, thus proving the node has the transaction
             const hash = param1 // may be multiple hashes comma separated
-            const miner_url = param2
+            if( param2 ) miner_url = formatURL(param2)
+
             response = await urlCall({ url: miner_url + 'transaction/verify?hash=' + hash })
             if( response.error || !response.result ){
                 console.log( `  x invalid hash - aborting:`, response )
@@ -338,7 +381,8 @@ console.log( ` ../transactios/prepare result: `, response )
 
         case 'examine': {// merkle tree proof returned, thus proving the node has the transaction
             const hash = param1 // may be multiple hashes comma separated
-            const miner_url = param2
+            if( param2 ) miner_url = formatURL(param2)
+
             response = await urlCall({ url: miner_url + 'transaction?hash=' + hash })
             if( response.error || !response.result ){
                 console.log( `  x invalid hash - aborting:`, response )
@@ -365,4 +409,4 @@ console.log( ` ../transactios/prepare result: `, response )
             break
     }
 }
-main()
+commandLineProcess()

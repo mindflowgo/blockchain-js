@@ -18,7 +18,7 @@ const block2 =  {
         fee: 0.02,
         type: 'transfer',
         seq: 40,
-        txSig: '3C2MqqrN55B2gtyvWJmozSJrZpqmH8m5zyHwnR4wBFwbQtiDCja3uUwFAu46gNn9V2LMaf5DxuaVZSAoEW5uV8WjTNB2ajAEPcCLx79n95fAFtytpVmMGsRpZSPkNnwaCYdv1ZrsmEA4LZcJ53EX',
+        txAuth: '3C2MqqrN55B2gtyvWJmozSJrZpqmH8m5zyHwnR4wBFwbQtiDCja3uUwFAu46gNn9V2LMaf5DxuaVZSAoEW5uV8WjTNB2ajAEPcCLx79n95fAFtytpVmMGsRpZSPkNnwaCYdv1ZrsmEA4LZcJ53EX',
         hash: '9cGqBK2CcZxCbVPrNsDHENn2QJ5aH4f6JEFNRtpocAih'
         },
         {
@@ -67,7 +67,7 @@ const block = {
         fee: 0.05,
         type: 'transfer',
         seq: 17,
-        txSig: '3jX4pWV2x8Rs4Ye4fuCNv3CN9SPypub8y8HF5yXqZ9JNzTppHYq8Cf1h9qPy2zkTcdoHFj8PbTCVJ3ZUq57x6preYgfhogWd8gp1JgNb5PvgDh7UGsNC2WuEDZtWSeixpcQXkgeZhySiWo6MR16b',
+        txAuth: '3jX4pWV2x8Rs4Ye4fuCNv3CN9SPypub8y8HF5yXqZ9JNzTppHYq8Cf1h9qPy2zkTcdoHFj8PbTCVJ3ZUq57x6preYgfhogWd8gp1JgNb5PvgDh7UGsNC2WuEDZtWSeixpcQXkgeZhySiWo6MR16b',
         hash: 'CfC97NJsog7pSk6HTUFdqgQuDCs3YLghrSe4BxKWKNid'
       },
       {
@@ -109,7 +109,7 @@ const hashPrefix = '0'.repeat(difficulty)
 
 console.log( `Nonce=${difficulty}, finding hash: ${hashPrefix}xxxxxxxxxxxxx)`)
 
-let data = ' [29,"000092ab66141988b251a8337d393c0b2d1fa997c2a85b360c5b4dbb826c8615","0:1.0",1739809629,"miner3","2NjYKkotNXdnnqqWCDPhnV3uzDWJJnWsaUm9ho7mAXtj",%%nonce%%,[{"timestamp":1739809623,"src":"eric:5w1WLGXYypPQDj9i84tPFnoRdXQzq9ZGx87uzNUEctyUo","dest":"fil:HTzFU2orJH5tmyd3UMsUyLYVn3igRjEGqoRjjarKWembA","amount":5,"fee":0.05,"type":"transfer","seq":17,"txSig":"3jX4pWV2x8Rs4Ye4fuCNv3CN9SPypub8y8HF5yXqZ9JNzTppHYq8Cf1h9qPy2zkTcdoHFj8PbTCVJ3ZUq57x6preYgfhogWd8gp1JgNb5PvgDh7UGsNC2WuEDZtWSeixpcQXkgeZhySiWo6MR16b","hash":"CfC97NJsog7pSk6HTUFdqgQuDCs3YLghrSe4BxKWKNid"},{"timestamp":1739809629,"src":"_mint","dest":"miner3:BZExLZ89y6AZdRhhZzWbspiFLpasMsEXMNi94PjH8BdpP","amount":0.05,"fee":0,"type":"miningFees","seq":53,"source":"CfC97NJsog7pSk6HTUFdqgQuDCs3YLghrSe4BxKWKNid","hash":"DLy4WYNyx8Bux4WVFA9vpGFweELPK6AoZynW9yJ7WTKp"},{"timestamp":1739809629,"src":"_mint","dest":"miner3:BZExLZ89y6AZdRhhZzWbspiFLpasMsEXMNi94PjH8BdpP","amount":25,"fee":0,"type":"miningReward","seq":54,"hash":"4o3o7tnSSP6DSzZGofTvhZY9SbX4RAcEDrHsFdbnr217"}]]'
+let data = ' [29,"000092ab66141988b251a8337d393c0b2d1fa997c2a85b360c5b4dbb826c8615","0:1.0",1739809629,"miner3","2NjYKkotNXdnnqqWCDPhnV3uzDWJJnWsaUm9ho7mAXtj",%%nonce%%,[{"timestamp":1739809623,"src":"eric:5w1WLGXYypPQDj9i84tPFnoRdXQzq9ZGx87uzNUEctyUo","dest":"fil:HTzFU2orJH5tmyd3UMsUyLYVn3igRjEGqoRjjarKWembA","amount":5,"fee":0.05,"type":"transfer","seq":17,"txAuth":"3jX4pWV2x8Rs4Ye4fuCNv3CN9SPypub8y8HF5yXqZ9JNzTppHYq8Cf1h9qPy2zkTcdoHFj8PbTCVJ3ZUq57x6preYgfhogWd8gp1JgNb5PvgDh7UGsNC2WuEDZtWSeixpcQXkgeZhySiWo6MR16b","hash":"CfC97NJsog7pSk6HTUFdqgQuDCs3YLghrSe4BxKWKNid"},{"timestamp":1739809629,"src":"_mint","dest":"miner3:BZExLZ89y6AZdRhhZzWbspiFLpasMsEXMNi94PjH8BdpP","amount":0.05,"fee":0,"type":"miningFees","seq":53,"source":"CfC97NJsog7pSk6HTUFdqgQuDCs3YLghrSe4BxKWKNid","hash":"DLy4WYNyx8Bux4WVFA9vpGFweELPK6AoZynW9yJ7WTKp"},{"timestamp":1739809629,"src":"_mint","dest":"miner3:BZExLZ89y6AZdRhhZzWbspiFLpasMsEXMNi94PjH8BdpP","amount":25,"fee":0,"type":"miningReward","seq":54,"hash":"4o3o7tnSSP6DSzZGofTvhZY9SbX4RAcEDrHsFdbnr217"}]]'
 const start = time()
 let nonce = 0
 let elapsed
