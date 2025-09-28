@@ -46,13 +46,14 @@ node api.js token-create jax$ 100000 http://localhost:5000/
 Only the token creator can adjust it's supply, and airdrop/gift to others.
 Their adjust request is signed with (token|amount|seq)
 ```bash
-node api.js token-adjust jax$ +100000 http://localhost:5000/
+./api.sh token-create 'cad$' 50000 evan localhost:5000
 
-node api.js token-airdrop jax$5000 miner1 http://localhost:5000/
+./api.sh token-create 'cad$' 50000 evan localhost:5000
 
-node api.js token-ownership jax$ miner1 http://localhost:5000/
+./api.sh token-airdrop 'cad$100' fil
 
-curl --data '[{"src":"_","dest":"_mint","amount":"2000000","type":"tokenCreate"}]' http://localhost:5000/transactions
+
+
 ```
 
 ### Grant Money to Miner

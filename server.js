@@ -195,19 +195,19 @@ async function server() {
         }, serverMiner.P2P.getNodeState()))
 
     // get fee and seq #
-    .post('/transaction/prepare', handlePOST(async ({src, amount},head) => {
-        debug('dim',`>> [${head.authtoken}]${head.url}` )
+    .post('/transaction/prepare', handlePOST(async ({src, dest, amount, token, type = 'transfer', note = ''},head) => {
+        debug(4,`>> [${head.authtoken}]${head.url}` )
         // now try to complete transaction
-        const fee = serverMiner.TransactionHandler.getFee({ amount })
+        const fee = serverMiner.TransactionHandler.getFee({ amount, token, type })
         const srcWallet = serverMiner.Wallet.getUserOrCreate( src )
-        if( srcWallet.error )
-            return srcWallet
+        if( srcWallet.error ) return srcWallet
         
         const seq = srcWallet.seq.tx
-        if( seq.error )
-            return seq
+        if( seq.error ) return seq
         
-        return { fee, seq, publicKey: srcWallet.publicKey }
+        const transaction = {src, dest, amount, token, fee, type, seq: seq+1, note }
+
+        return { error: false, publicKey: srcWallet.publicKey, transaction }
         }, serverMiner.P2P.getNodeState()))
 
     .post('/transaction', handlePOST(async (transaction,head) => { // user initiated transaction to server
@@ -296,7 +296,10 @@ debugger
         // let's run this transaction
         const response = serverMiner.TransactionHandler.processTransactions(transactions)
         console.log( ` resonse: `, response )
-        if( response.error ) return response
+        if( response.error ){
+            debug( 1, `<red>ERROR:</> Unable to process token: ${response.error}` )
+            return
+        }
 
         // share it so mempool transaction known before block mined
         for( const transaction of transactions )

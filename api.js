@@ -14,7 +14,7 @@ function walletInfo(){
     debug( `- ./api.sh check {walletname}`)
     debug( `- ./api.sh create {walletname} [miner-server-api-url]` )
     debug( `- ./api.sh miner-deposit {miner-name} {receiver} {amount} {miner-server-api-url}` )
-    debug( `- ./api.sh transaction {sender} {receiver} {amount} transfer {miner-server-api-url} [*][note]` ) // can attach a note to transaction
+    debug( `- ./api.sh send {sender} {receiver} {amount} {miner-server-api-url} [*][note]` ) // can attach a note to transaction
     debug( `- ./api.sh transaction-verify {hash1}[,hash2,...] {miner-server-api-url}`)
     debug( `- ./api.sh examine {hash} {miner-server-api-url}` )
     debug( `- ./api.sh token-create {token} {+/- amount} {admin-user} {miner-server-api-url}` )
@@ -90,24 +90,46 @@ async function commandLineProcess(){
             }
 
             // arrange alphabettically and display
-            debug('dim',`   = Name =${' '.repeat(14)} = Unconfirmed =${' '.repeat(6)} = On-Chain Balance =  = Depth =   = Notes =`)
-            console.log( 'wallets:', wallets )
+            debug( 1,`   = Name =${' '.repeat(14)} = Unconfirmed =${' '.repeat(6)} = On-Chain Balance =  = Depth =   = Notes =`)
             const BASE_TOKEN = userTransactionHandler.BASE_TOKEN
-            wallets.filter( w => w.name ).sort((a, b) =>  a.name.localeCompare(b.name)).forEach( i=>{
-                const name = i.name.length>19 ? i.name.substring(0,17)+'...' : i.name 
-                // find wallet with this name, and cycle through the tokens
-                // for( const token of this.listTokens(w) ){for( const token of this.listTokens(w) ){
-                if( !(name.length===0 && name === userTransactionHandler.MINT_TOKEN) && i[BASE_TOKEN].tx.balance>0 ){
-                    let seqInfo = i[BASE_TOKEN].tx?.seq > 0 || i[BASE_TOKEN].onChain?.seq > 0 ? `${i[BASE_TOKEN].seq.tx},${i[BASE_TOKEN].seq.onChain}` : ''
-                    seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':'
-                    debug('dim',`   - ${name}${seqInfo}${' '.repeat(20-(seqInfo.length+name.length))} $ ${i[BASE_TOKEN].tx.balance || '0'} `
-                              + `${' '.repeat(18-i[BASE_TOKEN].tx.balance.toString().length)} ${i[BASE_TOKEN].tx.balance === i[BASE_TOKEN].onChain.balance ? '  "' : `$ `+i[BASE_TOKEN].onChain.balance} `
-                              + `${' '.repeat(25-(i[BASE_TOKEN].tx.balance === i[BASE_TOKEN].onChain.balance ? '  "' : `$ `+i[BASE_TOKEN].onChain.balance).toString().length)}`
-                              + `${' '.repeat(4-i.depth.toString().length)}${i.depth}`
-                              + `      ${i.note || ''}`
-                            )
+            const showWallets = wallets.filter( w => w.name ).sort((a, b) => (b.name.includes('$') - a.name.includes('$')) || a.name.localeCompare(b.name))
+            for( const w of showWallets ){
+                const name = w.name.length > 19 ? w.name.substring(0, 17) + '...' : w.name
+                if( name === userTransactionHandler.MINT_TOKEN ) continue
+                  // Tokens to show
+                  const tokens = w.name.includes('$')
+                    ? [w.name] // if wallet name is a token (like cad$, usd$)
+                    : Object.keys(w).filter(k => k.includes('$')); // otherwise, all $-keys
+              
+                  for (const token of tokens) {
+                    const txBal = w[token]?.tx?.balance || 0;
+                    const onChainBal = w[token]?.onChain?.balance ?? txBal;
+              
+                    if (!(name.length === 0 && name === userTransactionHandler.MINT_TOKEN)) {
+                      // format seq info
+                      let seqInfo = w.seq?.tx > 0 || w.seq?.onChain > 0 ? `${w.seq.tx},${w.seq.onChain}` : '';
+                      seqInfo = !seqInfo ? ':' : '/' + seqInfo + ':';
+              
+                      debug(
+                        1,
+                        `   - ${name} [${token}]${seqInfo}${' '.repeat(
+                          20 - (seqInfo.length + name.length + token.length + 3)
+                        )} $ ${txBal} ` +
+                          `${' '.repeat(18 - txBal.toString().length)} ${
+                            txBal === onChainBal ? '  "' : `$ ` + onChainBal
+                          } ` +
+                          `${' '.repeat(
+                            25 -
+                              (txBal === onChainBal ? '  "' : `$ ` + onChainBal).toString()
+                                .length
+                          )}` +
+                          `${' '.repeat(4 - w.depth.toString().length)}${w.depth}` +
+                          `      ${w.note || ''}`
+                      );
+                    }
+                  }
                 }
-                })
+              
             break
             }
         case 'check': {
@@ -149,18 +171,17 @@ async function commandLineProcess(){
             const admin = userWallet.buildNameWithPublicKey(param3)
             if( param4 ) miner_url = formatURL(param4)
 
-console.log( `[token-create] amount(${amount}) token(${token}) admin(${admin} miner_url(${miner_url}))`, admin)
             if( admin.error || admin.startsWith('http') ){
-                console.log( `! Invalid token administrator. Please add one. ${admin.error || ''}`)
+                debug( `! Invalid token administrator. Please add one. ${admin.error || ''}`)
                 return
             }
             if( !miner_url || miner_url.length<10 ){
-                console.log( `x Miner URL invalid, rejecting.`)
+                debug( `x Miner URL invalid, rejecting.`)
                 return
             }
             const wallet = userWallet.getUser(admin)
             if( wallet.error || !wallet.privateKey ){
-                console.error( `Sorry, user '${admin}' does not have a privateKey on this node, and so can't administer a token issue.`)
+                debug( `Sorry, user '${admin}' does not have a privateKey on this node, and so can't administer a token issue.`)
                 return
             }
 
@@ -179,17 +200,15 @@ console.log( `[token-create] amount(${amount}) token(${token}) admin(${admin} mi
             }
 
             // now let's re-submit the signed transactions for finalizing token creation.
-            console.log( `response: `, tokenAuth.transactions )
             let transactions = []
             for( const transaction of tokenAuth.transactions )
                 // signer specified in transaction 'admin' field, hopefully they exist on our node
                 transactions.push( userTransactionHandler.transactionSign(transaction, transaction.admin) )
             tokenAuth.transactions = transactions
-            console.log( `response: `, tokenAuth.transactions )
 
             response = await urlCall({ url: miner_url + 'token/transactions', body: tokenAuth })
             if( response.error ) return response
-            console.log( `Attempting to create a token ( ${token} ) administered by '${admin}'... response:`, JSON.stringify(response) )
+            debug( `Attempting to create a token ( ${token} ) administered by '${admin}'... response:`, JSON.stringify(response) )
             const result = response.result
             if( result.error )
                 debug( 'red', ` * token creation REJECTED transaction: ${result.error}` )
@@ -205,7 +224,6 @@ console.log( `[token-create] amount(${amount}) token(${token}) admin(${admin} mi
             const dest = userWallet.buildNameWithPublicKey(param2)
             if( param3 ) miner_url = formatURL(param3)
             
-console.log( `param1: ${param1}, param2: ${param2}, param3: ${param3}, miner_url(${miner_url})`)
             if( dest.error ){ console.log( dest.error ); return }
 
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount ) }
@@ -217,31 +235,32 @@ console.log( `param1: ${param1}, param2: ${param2}, param3: ${param3}, miner_url
                 return
             }
             const tokenAuth = response.result // { action, token, amount, fee, admin, transactions }
-            console.log( `token-aridrop auth request: `, tokenAuth )
-
+            
             if( tokenAuth.admin && tokenAuth.admin.startsWith('*root:') && process.env.BLOCKCHAIN_PRIVATEKEY )
-                console.log( 'dim', ` * privateKey for BASE_TOKEN available; good!`)
+                debug( 4, ` * privateKey for BASE_TOKEN available; good!`)
             else if( tokenAuth.admin && userWallet.getUser(tokenAuth.admin).privateKey )
-                console.log( 'dim', ` * privateKey for admin (${tokenAuth.admin}) of ${token} available; good!`)
+                debug( 4, ` * privateKey for admin (${tokenAuth.admin}) of ${token} available; good!`)
             else {
-                console.log( 'red', `Unable to proceed as missing privateKey for singing airdrop.`)
+                debug( 1, `<red>ERROR: Unable to proceed as missing privateKey for singing airdrop.</>`)
                 return
             }
 
             // now let's re-submit the signed transactions for finalizing token creation (using privateKey we have for admin).
             let transactions = []
             for( const transaction of tokenAuth.transactions ){
-                const _transaction = userTransactionHandler.transactionSign(transaction,tokenAuth.admin)
-                transactions.push( _transaction ) // userTransactionHandler.transactionSign(transaction,tokenAuth.admin) )
+                const signedTransaction = userTransactionHandler.transactionSign(transaction,tokenAuth.admin)
+                transactions.push( signedTransaction )
             }
             tokenAuth.transactions = transactions
 
             response = await urlCall({ url: miner_url + 'token/transactions', body: tokenAuth })
-            console.log( `Attempting to perform airdrop for ( ${token} ) administered by '${tokenAuth.admin}'... response:`, JSON.stringify(response) )
+            debug( 4, `Attempting to perform airdrop for ( ${token} ) administered by '${tokenAuth.admin}'...` )
             if( response.error ) {
-                console.log( response.error )
+                debug( 1, `<red>ERROR: ${response.error}</>` )
                 return
             }
+
+            
             const result = response.result
             if( result.error )
                 debug( 'red', ` * token airdrop REJECTED transaction: ${result.error}` )
@@ -252,71 +271,67 @@ console.log( `param1: ${param1}, param2: ${param2}, param3: ${param3}, miner_url
         }
         
         // node api.js transaction {sender} {receiver} {token?}{amount} transfer [miner-server-api-url]` )
-        case 'transaction': {
+        case 'send': {
             let dest = param2
             let amount = param3
-            const type = param4.length<3 ? 'transfer' : param4
-            if( param5 ) miner_url = formatURL(param5)
+            if( param4 ) miner_url = formatURL(param4)
             const note = param6 || ''
 
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 
-            if( !['escrow','transfer'].includes(type) ){
-                debug( 'red', `Invalid type of transaction. Use: 'transfer' or 'escrow'`)
-                return
-            }
             dest = userWallet.buildNameWithPublicKey(dest)
-            if( dest.error || !dest || !url ){
-                debug( 'red', dest.error )
+            if( dest.error || !dest || !miner_url ){
+                debug( 1, `<red>ERROR: ${dest.error}</>` )
                 return
             }
 
             // let's get the fee for transaction & seq
             const src = userWallet.buildNameWithPublicKey(name)
             if( src.error ){
-                debug( 'red', src.error )
+                debug( 1, `<red>ERROR: ${src.error}</>` )
                 return
             }
-            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, amount } })
+            const type = 'transfer'
+            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, dest, amount, token, type, note } })
             if( response.error ){
-                debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
+                debug( 1, `<red>ERROR: invalid transaction prepare request: ${response.error}</>` )
                 return
             }
 
-console.log( ` ../transactios/prepare result: `, response )
-            // now we accept this fee and authorize/sign the transaction (with users last seq #)
-            const { fee, seq }= response
-            if( note.length>0 && note.startsWith('*') ){ // encrypt note for recipient only
-                const srcWallet = userWallet.getUserOrCreate(src)
-                note = '*' + userWallet.sign(srcWallet.privateKey, note)
-                debug('dim',`! encrypted note: ${note}`)
+            let transaction = response.transaction
+            // encrypt note for recipient only (if set)
+            if( note.length>0 ){
+                if( note.startsWith('*') ){ 
+                    const srcWallet = userWallet.getUserOrCreate(src)
+                    note = '*' + userWallet.sign(srcWallet.privateKey, note)
+                    debug( 4, `<gray>! encrypted note: ${note}</>`)
+                }
+                transaction.note = note
             }
-            console.log( `src(${src}) dest(${dest}) amount(${amount}) fee (${fee}) seq(${seq})`)
-            const transactionData = {src, dest, amount, token, fee, type, seq: seq+1, note }
-            const transaction = userTransactionHandler.transactionSign(transactionData)
-            console.log( `transaction: `, transaction )
+
+            // now we accept this fee and authorize/sign the transaction (with users last seq #)
+            transaction = userTransactionHandler.transactionSign(transaction)
             // if( !transaction.error )
             if( transaction.error ){
-                console.log( `  ! Signing error:`, transaction.error )
+                debug( 1, `<red>! Signing error: ${transaction.error}</>` )
                 return
             }
 
             // post the signed transaction
-            debug( 'dim', ` - Queried server for fee/seq: [${userWallet.getNameOnly(src)}/${seq+1} -> ${userWallet.getNameOnly(dest)} ${transaction.token}${transaction.amount}] / ${type} + fee=$${fee}; signing & posting...` )
+            debug(  1, `- Queried server for fee/seq: [${userWallet.getNameOnly(src)}/${transaction.seq} -> ${userWallet.getNameOnly(dest)} ${transaction.token}${transaction.amount}] / ${transaction.type} + fee=$${transaction.fee}; signing & posting...` )
             response = await urlCall({ url: miner_url + 'transaction', body: transaction })
             if( response.error ){
-                debug( 'red', `   x mining server (${miner_url}) rejected it: ${response.error}`)
+                debug( 1, `<red>x mining server (${miner_url}) rejected it: ${response.error}</>`)
                 return
             }
             const result = response.result
             if( result.error ){
-                debug( 'red', `   x mining server REJECTED transaction: ${result.error}` )
+                debug( 1, `<red>x mining server REJECTED transaction: ${result.error}</>` )
             } else {
                 if( result.meta?.warning ) debug('cyan', `   ! Warning: Accepted but increased risk of failure because: ${result.meta.warning}` )
 
-                debug( 'green', `   \ mining server accepted - transaction hash: ${result.hash}, expected balance: $${result.meta?.balance}` ) // Seq: ${result.seq}, Fee: $${result.fee},
+                debug( 1, `<green>\ mining server accepted (fee: ${result.fee}) - tx hash: ${result.hash}, expected sender balance: ${result.token}${result.meta?.balance}</>` ) // Seq: ${result.seq}, Fee: $${result.fee},
             }
-            debug( 'dim', ` `)
             break
             }
 
@@ -331,20 +346,28 @@ console.log( ` ../transactios/prepare result: `, response )
             { [amount, token] = userTransactionHandler.extractTokenFromAmount( amount, token ) }
 
             if( dest.error ){
-                debug('red',dest.error)
+                debug( 3, `<red>${dest.error}</>` )
                 return
             }
 
             // let's get the fee for transaction & seq
-            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, amount } })
+            const type = 'minerDeposit'
+            response = await urlCall({ url: miner_url + 'transaction/prepare', body: { src, amount, token, type } })
             if( response.error ){
                 debug( 'red', `  x invalid transaction prepare request, aborting:`, response )
                 return
             }
             // now we accept this fee and authorize/sign the transaction (with users last seq #)
-            const { fee, seq }= response
+            let transaction = response.transaction
 
-            const transaction = {src, dest, amount, fee, type: 'minerDeposit', seq: seq+1}
+            // now, as the miner, we have to sign-off on the deposit (so we need private key for the miner)
+            transaction = userTransactionHandler.transactionSign(transaction)
+            // if( !transaction.error )
+            if( transaction.error ){
+                debug( 1, `<red>! Signing error: ${transaction.error}</>` )
+                return
+            }
+
             response = await urlCall({ url: miner_url + 'transaction', body: transaction })
             if( response.error ){
                 debug( 'red', `   x mining server (${miner_url}) rejected it: ${response.error}`)
