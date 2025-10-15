@@ -330,8 +330,12 @@ debugger
     // process.on('unhandledRejection', (reason, promise) => {
     //     console.error('Unhandled Rejection at:', promise, 'reason:', reason.stack || reason);
     //   });
-
-server()
+try { 
+    server()
+} catch( e ){
+    debug( `error: ${e.message}` )
+    console.log( e.data )
+}
     // .catch(err => {
     //     debug('red',err)
     // })
